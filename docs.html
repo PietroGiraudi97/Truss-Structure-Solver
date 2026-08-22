@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Methodology — Pin Joint Structure Solver</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+        onload="document.querySelectorAll('.math').forEach(el=>{
+          const display = el.dataset.display==='1';
+          katex.render(el.textContent, el, { displayMode: display, throwOnError:false });
+        })"></script>
+<style>
+  :root{
+    --bg:#0f141b; --bg2:#161d27; --line:#2a3646; --txt:#dbe4ee; --dim:#8b9aad;
+    --accent:#4fc3f7; --accent2:#ffb74d; --ok:#81c784;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:"Segoe UI",system-ui,Arial,sans-serif;background:var(--bg);color:var(--txt);
+       line-height:1.65;font-size:15px;}
+  header{position:sticky;top:0;z-index:5;background:var(--bg2);border-bottom:1px solid var(--line);
+         padding:10px 24px;display:flex;gap:16px;align-items:center;}
+  header a{color:var(--accent);text-decoration:none}
+  header a:hover{text-decoration:underline}
+  header .title{font-weight:600;font-size:17px;}
+  main{max-width:900px;margin:0 auto;padding:28px 28px 80px;}
+  h1{font-size:26px;margin:18px 0 6px;color:var(--accent);}
+  h2{font-size:19px;margin:34px 0 10px;color:var(--accent);border-bottom:1px solid var(--line);padding-bottom:5px;}
+  h3{font-size:15.5px;margin:20px 0 6px;color:var(--accent2);}
+  p{margin:9px 0;}
+  .math{margin:10px 0;background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:12px 16px;overflow-x:auto;}
+  .math[data-display="0"]{display:inline-block;padding:2px 6px;margin:0 2px;background:var(--bg2);border:none;border-radius:4px;}
+  table{border-collapse:collapse;margin:12px 0;font-size:14px;}
+  th,td{border:1px solid var(--line);padding:6px 12px;text-align:left;}
+  th{background:var(--bg2);color:var(--accent);}
+  code{background:var(--bg2);border-radius:4px;padding:1px 5px;font-family:Consolas,monospace;font-size:13px;}
+  .note{border-left:3px solid var(--accent);background:var(--bg2);padding:10px 14px;margin:12px 0;border-radius:0 8px 8px 0;}
+  .note.warn{border-color:var(--accent2);}
+  .toc{background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:14px 20px;margin:16px 0;}
+  .toc a{color:var(--txt);text-decoration:none;display:block;padding:2px 0;}
+  .toc a:hover{color:var(--accent);}
+  .dim{color:var(--dim)}
+  ol,ul{margin:8px 0 8px 24px;}
+  li{margin:4px 0;}
+</style>
+</head>
+<body>
+<header>
+  <a href="index.html">← Back to solver</a>
+  <span class="title">Methodology &amp; Mathematical Formulation</span>
+</header>
+<main>
+
+<h1>Pin-Jointed Truss Analysis by the Unit-Load (Virtual Work) Method</h1>
+<p class="dim">This document describes exactly what the program computes, the assumptions made,
+and the mathematics behind the solver. The implementation follows this formulation line by line
+(see <code>js/solver.js</code>).</p>
+
+<div class="toc">
+  <b>Contents</b>
+  <a href="#sec1">1. Problem statement & assumptions</a>
+  <a href="#sec2">2. Notation and member kinematics</a>
+  <a href="#sec3">3. Governing equations of the discrete truss</a>
+  <a href="#sec4">4. The unit-load (virtual work) theorem for displacements</a>
+  <a href="#sec5">5. The redundant (statically indeterminate) case</a>
+  <a href="#sec6">6. Self weight</a>
+  <a href="#sec7">7. Thermal expansion</a>
+  <a href="#sec8">8. Reactions</a>
+  <a href="#sec9">9. Stability and error detection</a>
+  <a href="#sec10">10. Numerical verification built into the program</a>
+  <a href="#sec11">11. Units</a>
+  <a href="#sec12">12. Limitations</a>
+  <a href="#sec13">13. Dynamic analysis (modal superposition)</a>
+  <a href="#sec14">14. Design checks (utilisation &amp; buckling)</a>
+</div>
+
+<h2 id="sec1">1. Problem statement &amp; assumptions</h2>
+<p>A <em>pin-jointed truss</em> is a structure of straight bars connected at frictionless pins
+(joints). Loads are applied only at the joints. Under these conditions every member carries a
+<b>constant axial force</b> — there is no bending or shear — and each member behaves as a linear
+spring of stiffness <span class="math">EA/L</span>.</p>
+<p>The software assumes:</p>
+<ul>
+  <li>2D (planar) geometry; joints carry two translational degrees of freedom <span class="math">(u_x, u_y)</span>, rotations are free at pins;</li>
+  <li>linear-elastic material, constant <span class="math">E</span> and <span class="math">A</span> per member;</li>
+  <li>small displacements (first-order theory, geometry taken from the undeformed state);</li>
+  <li>loads at joints only; distributed effects (self weight, temperature) are converted to
+      equivalent joint data as detailed in §6–7;</li>
+  <li>supports: pin (both translations fixed) or rollers (one translation fixed).</li>
+</ul>
+
+<h2 id="sec2">2. Notation and member kinematics</h2>
+<p>Joint <span class="math">i</span> has coordinates <span class="math">(x_i, y_i)</span> [m] and
+displacement <span class="math">\mathbf{d}_i = (u_i, v_i)</span> [mm]. For member <span class="math">m</span>
+connecting joints <span class="math">n_1 \to n_2</span>, let</p>
+<div class="math" data-display="1">L_m = \sqrt{(x_{n_2}-x_{n_1})^2 + (y_{n_2}-y_{n_1})^2}, \qquad
+(c_x, c_y) = \frac{(x_{n_2}-x_{n_1},\, y_{n_2}-y_{n_1})}{L_m}</div>
+<p>be its length and direction cosines. The axial <b>total elongation</b> is the projection of the
+relative joint displacement onto the member axis:</p>
+<div class="math" data-display="1">\Delta L_m \;=\; \mathbf{b}_m^{\mathsf T}\,\mathbf{u}, \qquad
+\mathbf{b}_m = \begin{pmatrix} -c_x \\ -c_y \\ c_x \\ c_y \end{pmatrix}_{n_1x,\,n_1y,\,n_2x,\,n_2y}</div>
+
+<h2 id="sec3">3. Governing equations of the discrete truss</h2>
+<h3>3.1 Constitutive law (including thermal strain)</h3>
+<p>With free thermal strain <span class="math">\varepsilon_t = \alpha\,\Delta T</span>, the member
+force depends only on the <b>mechanical</b> strain:</p>
+<div class="math" data-display="1">N_m \;=\; \frac{E_m A_m}{L_m}\,\Big(\Delta L_m - \Delta L_m^{th}\Big),
+\qquad \Delta L_m^{th} = \alpha\,\Delta T_m\, L_m
+\qquad\text{(+ tension)}</div>
+<h3>3.2 Joint equilibrium</h3>
+<p>At every free degree of freedom <span class="math">k</span>, member end forces must balance the
+external load <span class="math">P_k</span> (applied loads plus the self-weight and thermal
+equivalent joint loads of §6–7):</p>
+<div class="math" data-display="1">\sum_m (\mathbf{b}_m)_k\, N_m \;=\; P_k</div>
+<h3>3.3 The assembled stiffness system</h3>
+<p>Substituting §3.1 into §3.2 and writing
+<span class="math">K = \sum_m \dfrac{E_mA_m}{L_m}\,\mathbf{b}_m\mathbf{b}_m^{\mathsf T}</span>, the
+displacement vector of all free dofs satisfies</p>
+<div class="math" data-display="1">\mathbf{K}\,\mathbf{u} \;=\; \mathbf{P} \;+\; \sum_m \mathbf{b}_m\, F_{T,m},
+\qquad F_{T,m} = E_m A_m \alpha\,\Delta T_m</div>
+<p>where <span class="math">F_T</span> is the thermal <b>fixed-end force</b>: the force a member fully
+restrained against expansion would carry (<span class="math">N = -F_T</span> when
+<span class="math">\Delta L=0</span>). This linear system is what the program solves first
+(Gaussian elimination with partial pivoting) to obtain the compatibility-consistent displacement
+field — the reference solution, exact for determinate and indeterminate trusses alike.</p>
+
+<h2 id="sec4">4. The unit-load (virtual work) theorem for displacements</h2>
+<p>The headline method. To find the displacement <span class="math">\delta_k</span> of joint
+coordinate <span class="math">k</span>:</p>
+<ol>
+  <li>remove the real loads;</li>
+  <li>apply a <b>unit virtual load</b> <span class="math">\bar{P}_k = 1</span> at coordinate
+      <span class="math">k</span>, in the desired direction;</li>
+  <li>compute <em>any</em> force system <span class="math">n_m</span> in the members that is in
+      static equilibrium with that unit load.</li>
+</ol>
+<p>Then the principle of virtual work — external virtual work equals internal virtual work —
+gives, exactly,</p>
+<div class="math" data-display="1">\boxed{\;\delta_k \;=\; \sum_m n_m\,\Delta L_m
+   \;=\; \sum_m n_m\left(\frac{N_m L_m}{E_m A_m} \;+\; \alpha\,\Delta T_m L_m\right)\;}</div>
+<p>because the real elongation field <span class="math">\Delta L_m</span> (elastic + thermal),
+treated as the compatible "strain" the virtual system works through, is known from §3.</p>
+<p>In the program this integration is carried out independently for <em>every</em> free dof, and the
+result is compared against the direct stiffness solution <span class="math">\mathbf{u}</span>;
+agreement to machine precision is reported in the results panel ("Virtual-work check").</p>
+
+<h2 id="sec5">5. The redundant (statically indeterminate) case</h2>
+<p>Counting members <span class="math">m</span>, reaction components <span class="math">r</span> and
+joints <span class="math">j</span>:</p>
+<ul>
+  <li><span class="math">m + r &lt; 2j</span> — mechanism (unstable): singular <span class="math">K</span>, the solver stops with an error;</li>
+  <li><span class="math">m + r = 2j</span> — statically determinate: equilibrium alone fixes all member forces;</li>
+  <li><span class="math">m + r &gt; 2j</span> — indeterminate of degree <span class="math">m+r-2j</span>.</li>
+</ul>
+<p>In the indeterminate case the real forces <span class="math">N_m</span> cannot be found from
+equilibrium alone; they additionally require compatibility, which is precisely what solving
+<span class="math">K\mathbf{u}=\mathbf{P}</span> provides (§3.3).</p>
+<div class="note">
+<b>Why the virtual work sum is still exact.</b> The virtual n-forces are required to satisfy
+<b>equilibrium only</b> — not compatibility. If <span class="math">\mathbf{A}_{free}\,\mathbf{n} = \mathbf{e}_k</span>
+has infinitely many solutions, any two differ by a <em>self-stress state</em>
+<span class="math">\mathbf{s}</span> (<span class="math">\mathbf{A}\mathbf{s} = 0</span>), and a
+self-stress does zero work on any compatible elongation field:
+<span class="math">\mathbf{s}^{\mathsf T}\Delta\mathbf{L} = \mathbf{s}^{\mathsf T}\mathbf{B}^{\mathsf T}\mathbf{u} = 0</span>.
+Hence <span class="math">\sum n_m\Delta L_m</span> is invariant, and the program simply picks the
+<b>minimum-norm</b> solution
+<span class="math">\mathbf{n} = \mathbf{A}^{\mathsf T}(\mathbf{A}\mathbf{A}^{\mathsf T})^{-1}\mathbf{e}_k</span>
+(function <code>Lin.solveMinNorm</code>).
+</div>
+
+<h2 id="sec6">6. Self weight</h2>
+<p>Member weight <span class="math">w_m = \rho\, g\, A_m\, L_m</span> (
+<span class="math">\rho</span> configurable, default steel 7850 kg/m³) acts along the member. As a
+prismatic pin-ended bar is statically equivalent to half its weight applied at each end joint, the
+program adds</p>
+<div class="math" data-display="1">P^{sw}_{n_1,y} = P^{sw}_{n_2,y} = -\,\frac{w_m}{2}</div>
+<p>to the load vector. For the truss idealisation this lumping is <b>exact</b>: members carry pure
+axial force either way, and external work of the lumped system equals that of the distributed load.
+Weight is added only at solve time (not stored in the model), and the total is reported in the
+results panel. The classical single hanging bar is recovered:
+<span class="math">\delta_{tip} = wL/(2EA)</span>.</p>
+
+<h2 id="sec7">7. Thermal expansion</h2>
+<p>With the toggle on (<span class="math">\alpha</span> default 12 µε/°C for steel), each member has
+a temperature change <span class="math">\Delta T_m</span> (set individually, or globally with
+"Apply ΔT to all"). The constitutive law of §3.1 leads to the fixed-end-force formulation: a heated
+member pushes its joints apart with <span class="math">F_T = EA\alpha\Delta T</span>, i.e. it acts
+like an equal opposite external load. Two canonical behaviours the tests in <code>test.html</code>
+verify:</p>
+<ul>
+  <li><b>Fully restrained</b> member heated: <span class="math">\Delta L = 0</span>, so
+      <span class="math">N = -EA\alpha\Delta T</span> (pure thermal compression);</li>
+  <li><b>Determinate truss</b> with one expandable member: it lengthens freely
+      (<span class="math">\Delta L = \alpha\Delta T L</span>), joints move, and all member forces
+      remain zero — temperature only induces stress where expansion is restrained
+      (typical in redundant structures).</li>
+</ul>
+
+<h2 id="sec8">8. Reactions</h2>
+<p>Once all member forces are known, equilibrium of each supported joint gives the support forces
+on the structure (positive in <span class="math">+x, +y</span>):</p>
+<div class="math" data-display="1">R_x = -P_x - \sum_{m \ni j} (\mathbf{b}_m)_x\, N_m, \qquad
+R_y = -P_y - \sum_{m \ni j} (\mathbf{b}_m)_y\, N_m</div>
+<p>with the sums over members meeting at joint <span class="math">j</span>, and the sign convention
+that <span class="math">\mathbf{b}_m</span> points from the joint toward the far end. Global checks
+<span class="math">\sum R_x = -\sum P_x</span>, <span class="math">\sum R_y = -\sum P_y</span> hold
+identically and are exercised by the self-tests.</p>
+
+<h2 id="sec9">9. Stability and error detection</h2>
+<ul>
+  <li>The status bar shows the counts <span class="math">j, m, r</span> and warns when
+      <span class="math">m+r &lt; 2j</span> (certain mechanism).</li>
+  <li>The true test is numerical: if <span class="math">K</span> is singular (a rigid-body mode, or a
+      local mechanism such as two collinear members at an unloaded joint), solving
+      <span class="math">K\mathbf{u}=\mathbf{P}</span> fails and the program reports the structure as
+      unstable instead of producing numbers.</li>
+  <li>Zero-length members and fully-fixed structures are rejected with explanatory messages.</li>
+</ul>
+
+<h2 id="sec10">10. Numerical verification built into the program</h2>
+<p>Every solve reports two residuals in the results panel:</p>
+<div class="math" data-display="1">\text{equilibrium residual} \;=\; \big\|\mathbf{K}\mathbf{u} - \mathbf{P}\big\|_\infty,
+\qquad
+\text{virtual-work check} \;=\; \max_k \big| \delta_k - \textstyle\sum_m n_m \Delta L_m \big|</div>
+<p>Both are at rounding level (~<span class="math">10^{-10}</span>) for a well-posed structure.
+Additionally, <code>test.html</code> runs closed-form textbook cases (two-bar truss, method-of-joints
+bracket, hanging bar under self weight, restrained thermal bar, free thermal sway, Pratt truss with
+symmetry checks) and prints PASS/FAIL per identity.</p>
+
+<h2 id="sec11">11. Units</h2>
+<table>
+  <tr><th>Quantity</th><th>Unit</th><th>Notes</th></tr>
+  <tr><td>Coordinates, lengths</td><td>m</td><td>grid snap 0.25 m default</td></tr>
+  <tr><td>Loads, forces, reactions</td><td>kN</td><td>tension positive for member forces</td></tr>
+  <tr><td>Young's modulus E</td><td>kN/cm²</td><td>steel 21000; aluminium ~7000</td></tr>
+  <tr><td>Area A</td><td>cm²</td><td></td></tr>
+  <tr><td>Density ρ</td><td>kg/m³</td><td>w = ρ·g·A·L with g = 9.81 N/kg</td></tr>
+  <tr><td>Thermal coefficient α</td><td>µε/°C</td><td>i.e. 10⁻⁶ /°C</td></tr>
+  <tr><td>ΔT</td><td>°C</td><td>per member</td></tr>
+  <tr><td>Displacements, elongations</td><td>mm</td><td>internally L is converted m→mm so K·u[mm]=kN</td></tr>
+  <tr><td>Stress σ = N/A</td><td>MPa</td><td>shown on the deflected shape; 1 kN/cm² = 10 MPa</td></tr>
+</table>
+
+<h2 id="sec12">12. Limitations</h2>
+<div class="note warn">
+First-order linear theory only. Not covered: buckling of compression members (always check
+σ against the member's buckling capacity separately!), geometric nonlinearity / second-order
+(P–Δ) effects, plasticity, joint rigidity (real trusses have semi-rigid gussets), out-of-plane
+behaviour, and dynamic effects. The small-displacement assumption means members deform and forces
+are computed from the <em>original</em> geometry.
+</div>
+
+<h2 id="sec13">13. Dynamic analysis (modal superposition)</h2>
+<p>With inertia included, the equilibrium becomes the discretised equation of motion</p>
+<div class="math" data-display="1">\mathbf{M}\,\ddot{\mathbf{u}} + \mathbf{C}\,\dot{\mathbf{u}} + \mathbf{K}\,\mathbf{u} = \mathbf{P}(t)</div>
+
+<h3>13.1 Mass model</h3>
+<p>A <b>lumped (diagonal) mass matrix</b> is used: each member's mass
+<span class="math">\rho A_m L_m</span> is split 50/50 to its two end joints, and arbitrary joint
+masses can be added per node. Consistent units are kN–mm–s with mass in
+<span class="math">\text{kt = Mg}</span> (<span class="math">1\,\text{kN} = 1\,\text{kt}\cdot 1000\,\text{mm/s}^2</span>).
+Degrees of freedom carrying no mass (e.g. a massless intermediate joint) are statically condensed
+out of the dynamic system.</p>
+
+<h3>13.2 Undamped free vibration — eigenpairs</h3>
+<div class="math" data-display="1">\mathbf{K}\,\boldsymbol{\varphi}_r = \omega_r^2\,\mathbf{M}\,\boldsymbol{\varphi}_r,
+\qquad f_r = \frac{\omega_r}{2\pi}\;[\text{Hz}]</div>
+<p>With diagonal M the generalised problem reduces to a standard symmetric one,
+<span class="math">(\mathbf{M}^{-1/2}\mathbf{K}\mathbf{M}^{-1/2})\,\boldsymbol{\psi} = \omega^2\boldsymbol{\psi}</span>,
+solved by classical Jacobi rotations. Mode shapes are mass-normalised
+(<span class="math">\boldsymbol{\varphi}_r^{\mathsf T}\mathbf{M}\boldsymbol{\varphi}_r = 1</span>)
+and can be animated on the structure.</p>
+
+<h3>13.3 Damped time response by modal superposition</h3>
+<p>Writing <span class="math">\mathbf{u}(t) = \sum_r \boldsymbol{\varphi}_r\, q_r(t)</span> and
+using modal (Rayleigh) damping <span class="math">\zeta_r</span>, every mode is an independent SDOF
+oscillator</p>
+<div class="math" data-display="1">\ddot{q}_r + 2\zeta_r\omega_r\dot{q}_r + \omega_r^2 q_r
+  = \boldsymbol{\varphi}_r^{\mathsf T}\mathbf{P}\cdot\lambda(t)</div>
+<p>with <span class="math">\lambda(t)</span> the selectable load history (step, pulse, harmonic,
+ramp). Each modal equation is integrated <b>exactly</b> by Duhamel convolution with linear
+interpolation of the load within a step:</p>
+<div class="math" data-display="1">q_r(t+h) = e^{-\zeta\omega h}\big[A\cos\omega_d h + B\sin\omega_d h\big]
+   + q_{p}(t+h), \qquad \omega_d = \omega\sqrt{1-\zeta^2}</div>
+<p>where <span class="math">q_p(t) = \big(p(t) - \tfrac{2\zeta}{\omega}\dot p\big)/\omega^2</span> is
+the particular solution of the linearly-varying load. Member forces at every instant follow from
+<span class="math">N_m(t) = (EA/L)_m\,\mathbf{b}_m^{\mathsf T}\mathbf{u}(t)</span>, so the stress
+colour map on the deflected shape also animates. The results plot reports the
+<b>dynamic amplification factor</b> <span class="math">DAF = u_{max,dyn}/u_{static}</span>
+(theory: exactly 2 for a sudden step load on an undamped SDOF — verified by test T8).</p>
+
+<h2 id="sec14">14. Design checks (utilisation &amp; buckling)</h2>
+<p>For each member the program reports the <b>utilisation</b></p>
+<div class="math" data-display="1">U_m = \frac{\sigma_m}{\sigma_{lim,m}},
+\qquad \sigma_{lim} = \begin{cases} \sigma_{allow} & \text{tension}\\ \min(\sigma_{allow},\ \sigma_{cr}) & \text{compression}\end{cases}</div>
+<p>where <span class="math">\sigma_{allow}</span> is the user's allowable stress (material preset with a
+safety factor, e.g. S235 → 157 MPa = 235/1.5) and the <b>Euler buckling stress</b> of a
+pin-ended member is</p>
+<div class="math" data-display="1">\sigma_{cr} = \frac{\pi^2 E I}{A L^2}</div>
+<p>with <span class="math">I</span> taken from real rolled sections (CHS, RHS, IPE, HEA library) or the
+solid-square equivalent <span class="math">A^2/12</span>. Members with <span class="math">U>1</span> are
+shown red ("FAILS"); the member table, canvas colour mode *Utilisation*, the CSV export and the
+printable report all carry these values. <b>Caveat</b>: this is an elastic, first-order check —
+no local buckling, no effective-length factors beyond pin-pin, and no interaction with bending
+(bars are axial only), so for code work it is a sizing aid, not a substitute for a code check.</p>
+
+<p class="dim" style="margin-top:30px">Generated for the Pin Joint Structure Solver project —
+see README.md for usage, js/solver.js for the implementation of every formula above.</p>
+</main>
+</body>
+</html>

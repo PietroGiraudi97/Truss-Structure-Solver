@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>Solver self-test</title></head>
+<body>
+<pre id="out">Running…</pre>
+<script src="js/structure.js"></script>
+<script src="js/solver.js"></script>
+<script src="js/dynamics.js"></script>
+<script>
+const out = [];
+const log = s => { out.push(s); document.getElementById("out").textContent = out.join("\n"); };
+const approx = (a, b, tol=1e-6) => Math.abs(a-b) <= tol;
+
+try {
+  /* ---- TEST 1: two-bar truss ----
+     n3 apex (0,4) load -100 kN; members to (-3,0) pin and (3,0) pin.
+     δ = PL/(2 EA sin²θ), N = -P/(2 sinθ)                                */
+  let s = new Structure();
+  const b = 3, h = 4;
+  const n1 = s.addNode(-b, 0); n1.support = "pin";
+  const n2 = s.addNode( b, 0); n2.support = "pin";
+  const n3 = s.addNode( 0, h); n3.py = -100;
+  const E = 21000, A = 20, EAN = E * A;
+  s.addMember(n1, n3, E, A);
+  s.addMember(n2, n3, E, A);
+  let sol = Solver.solve(s);
+  const sinθ = h / 5;
+  const δexp = 100 * 5000 / (2 * EAN * sinθ * sinθ);
+  const dy = sol.dispOf(n3.id, "y");
+  log(`T1 two-bar: dy=${dy.toFixed(5)} mm, expect ${(-δexp).toFixed(5)} mm  ${approx(dy,-δexp)?"PASS":"FAIL"}`);
+  const Nexp = -100 / (2 * sinθ);
+  const N = sol.memberForces.get(1);
+  log(`   N1=${N.toFixed(3)} kN, expect ${Nexp.toFixed(3)} kN  ${approx(N,Nexp)?"PASS":"FAIL"}`);
+  const R1 = sol.reactions.get(n1.id);
+  log(`   R1=(${R1.rx.toFixed(2)}, ${R1.ry.toFixed(2)}), expect (37.50, 50.00)  ${approx(R1.rx,37.5)&&approx(R1.ry,50)?"PASS":"FAIL"}`);
+  log(`   Ku−P residual=${sol.verify.toExponential(2)}, virtual-work diff=${sol.virtErr.toExponential(2)}  ${sol.virtErr<1e-7?"PASS":"FAIL"}`);
+
+  /* ---- TEST 2: determinate cantilever (4-node bracket) ----
+     Wall at x=0: n1(0,2) pin, n2(0,0) pin. Free: n3(4,2), n4(4,0) load -50 at n4.
+     Bars: n1-n3 (top), n2-n4 (bottom), n1-n4 (diag), n3-n4 (vertical).
+     Method of joints:
+       n3: top chord + vertical:  ΣFx: -N13 - N34x... solve:
+       at n3: members n1n3 (horizontal), n3n4 (vertical), no load → N34 = 0, N13 = 0?
+       n4: load (0,-50); members: n2n4 horiz, n1n4 diag(-4,2)len√20, n3n4 vertical.
+       ΣFy: N34·(up) + N14·(2/√20) = 50… compute below numerically.            */
+  s = new Structure();
+  const w1 = s.addNode(0, 2); w1.support = "pin";
+  const w2 = s.addNode(0, 0); w2.support = "pin";
+  const f3 = s.addNode(4, 2);
+  const f4 = s.addNode(4, 0); f4.py = -50;
+  s.addMember(w1, f3, E, A);   // m1 top chord
+  s.addMember(w2, f4, E, A);   // m2 bottom chord
+  s.addMember(w1, f4, E, A);   // m3 diagonal
+  s.addMember(f3, f4, E, A);   // m4 vertical
+  sol = Solver.solve(s);
+  // hand solution: at n3: ΣFx: N13 = 0 (no x load at n3) → m1 N=0
+  //   then ΣFy at n3: -N34 = 0 → m4 N=0?? No: n3 connects m1(horiz) & m4(vert), no load → both 0. But then m4 zero.
+  // at n4: members m2 (horiz to left), m3 (diag to (-4,2)/√20), m4 (vert up, N=0)
+  //   ΣFy: N3·(2/√20)·(-1 towards w1) ... F_member on n4 toward w1 = N·(-4,2)/√20.
+  //   ΣFy: N3·2/√20 + 0 - 50 = 0 → N3 = 50·√20/2 = 111.80 kN (tension)
+  //   ΣFx: -N2 - N3·4/√20 = 0 → N2 = -111.80·4/√20 = -100 kN (compression)
+  const N3exp = 50 * Math.sqrt(20) / 2, N2exp = -100;
+  const g1 = sol.memberForces.get(3), g2 = sol.memberForces.get(2), g4 = sol.memberForces.get(4);
+  log(`T2 bracket: N_diag=${g1.toFixed(2)} (expect ${N3exp.toFixed(2)}) ${approx(g1,N3exp,1e-3)?"PASS":"FAIL"}`);
+  log(`           N_bot=${g2.toFixed(2)} (expect ${N2exp.toFixed(2)}) ${approx(g2,N2exp,1e-3)?"PASS":"FAIL"}`);
+  log(`           N_vert=${g4.toFixed(3)} (expect 0) ${approx(g4,0,1e-3)?"PASS":"FAIL"}`);
+  log(`   Ku−P=${sol.verify.toExponential(2)}, virtW diff=${sol.virtErr.toExponential(2)} ${sol.virtErr<1e-7?"PASS":"FAIL"}`);
+
+  /* ---- TEST 3: sample Pratt ---- */
+  s = Structure.samplePratt();
+  sol = Solver.solve(s);
+  const R0 = sol.reactions.get(s.nodes[0].id);
+  const R6 = sol.reactions.get(s.nodes[6].id);
+  const totLoad = s.nodes.reduce((t, n) => t + n.py, 0);
+  const okSum = approx(R0.ry + R6.ry, -totLoad, 1e-4);
+  // symmetry: loads are symmetric (5 top loads of -25 at x=2..10, mid extra -40 at x=6) → reactions equal
+  const okSym = approx(R0.ry, R6.ry, 1e-4) && approx(R0.ry, -totLoad/2, 1e-4);
+  log(`T3 Pratt: ΣPy=${totLoad}; Ry(L)=${R0.ry.toFixed(2)}, Ry(R)=${R6.ry.toFixed(2)}  sum-ok=${okSum?"PASS":"FAIL"} symm=${okSym?"PASS":"FAIL"}`);
+  log(`   Ku−P=${sol.verify.toExponential(2)}, virtW diff=${sol.virtErr.toExponential(2)} ${sol.virtErr<1e-6?"PASS":"FAIL"}`);
+  let maxD = 0, dN = null;
+  s.nodes.forEach(n => { const d = Solver.nodeDisp(sol, n), m = Math.hypot(d.ux, d.uy); if (m > maxD) { maxD = m; dN = n; } });
+  log(`   max disp = ${maxD.toFixed(3)} mm at n${dN.id} (sane if < ~150 mm)`);
+
+  /* ---- TEST 4: hanging vertical bar under self weight only ----
+     Bar pinned top (0,5), free bottom (0,0), no applied loads, SW on.
+     w_total = ρgAL; tip drop δ = w_tot·L/(2EA).
+     rollery at the joint fixes x so the model is stable.                */
+  s = new Structure();
+  const h1 = s.addNode(0, 5); h1.support = "pin";
+  const h2 = s.addNode(0, 0); h2.support = "rollery";
+  s.addMember(h1, h2, E, A);
+  sol = Solver.solve(s, { selfWeight: { include: true, rho: 7850 } });
+  const wExp = 7850 * 9.81e-3 * 0.002 * 5;
+  const δ4exp = wExp * 5000 / (2 * EAN);
+  const dy4 = sol.dispOf(h2.id, "y");
+  log(`T4 self weight: w=${sol.selfWeight.toFixed(4)} kN (expect ${wExp.toFixed(4)}) ${approx(sol.selfWeight,wExp,1e-4)?"PASS":"FAIL"}`);
+  log(`   tip dy=${dy4.toFixed(6)} mm, expect ${(-δ4exp).toFixed(6)} mm  ${approx(dy4,-δ4exp,1e-6)?"PASS":"FAIL"}`);
+  log(`   N=${sol.memberForces.get(1).toFixed(4)} kN, expect ${(wExp/2).toFixed(4)}  ${approx(sol.memberForces.get(1),wExp/2,1e-4)?"PASS":"FAIL"}`);
+  log(`   Ry=${sol.reactions.get(h1.id).ry.toFixed(4)}, expect ${wExp.toFixed(4)}  ${approx(sol.reactions.get(h1.id).ry,wExp,1e-4)?"PASS":"FAIL"}`);
+
+  /* ---- TEST 5: fully restrained bar heated ΔT=+40°C ----
+     Classic thermal stress: N = −EαΔT (compression), net δ = 0.
+     Use a triangle in the y=0 plane: top joint restrained too.
+     Simplest stable case: two collinear bars between walls with middle joint.
+     Bar n1(0,0) n2(4,0) n3(8,0); n1 pin, n3 pin, n2 free — but n2 has no
+     y-restraint and bars are collinear → unstable in y. Restrain n2 with
+     rollerx (fixes y). Then heated bar: N1 = N2 = −EA·α·ΔT, u(n2)=0.     */
+  s = new Structure();
+  const t1 = s.addNode(0, 0); t1.support = "pin";
+  const t2 = s.addNode(4, 0); t2.support = "rollerx";   // fixes y only
+  const t3 = s.addNode(8, 0); t3.support = "pin";
+  const mA = s.addMember(t1, t2, E, A); mA.dT = 40;
+  const mB = s.addMember(t2, t3, E, A); mB.dT = 40;
+  sol = Solver.solve(s, { thermal: { include: true, alpha: 12 } });
+  const FT5 = EAN * 12e-6 * 40;              // = 201.6 kN expected compression
+  const N5a = sol.memberForces.get(mA.id), N5b = sol.memberForces.get(mB.id);
+  const u5 = sol.dispOf(t2.id, "x");
+  log(`T5 thermal (restrained): N1=${N5a.toFixed(2)} kN, N2=${N5b.toFixed(2)} kN, expect ${(-FT5).toFixed(2)}  ${approx(N5a,-FT5,1e-6)&&approx(N5b,-FT5,1e-6)?"PASS":"FAIL"}`);
+  log(`   mid-joint u=${u5.toExponential(2)} mm (expect ~0)  ${approx(u5,0,1e-6)?"PASS":"FAIL"}`);
+  log(`   Ku−P=${sol.verify.toExponential(2)}, virtW diff=${sol.virtErr.toExponential(2)}  ${sol.virtErr<1e-6?"PASS":"FAIL"}`);
+
+  /* ---- TEST 6: free cantilever truss, heated diagonal only ----
+     If only ONE member of a determinate stable truss is heated and the truss
+     can accommodate it freely, displacements occur with NO stress (N≈0).
+     Use T2 bracket, heat only the vertical member f3-f4 by +100°C:
+     expected: N≈0 everywhere, f3 rises by α·ΔT·L = 12e-6·100·2000 = 2.4 mm  */
+  s = new Structure();
+  const b1 = s.addNode(0, 2); b1.support = "pin";
+  const b2 = s.addNode(0, 0); b2.support = "pin";
+  const b3 = s.addNode(4, 2);
+  const b4 = s.addNode(4, 0);
+  s.addMember(b1, b3, E, A);
+  s.addMember(b2, b4, E, A);
+  s.addMember(b1, b4, E, A);
+  const mV = s.addMember(b3, b4, E, A); mV.dT = 100;
+  sol = Solver.solve(s, { thermal: { include: true, alpha: 12 } });
+  let maxN = 0; s.members.forEach(m => maxN = Math.max(maxN, Math.abs(sol.memberForces.get(m.id))));
+  const vT = sol.dispOf(b3.id, "y"), vExpect = 12e-6 * 100 * 2000;
+  log(`T6 thermal (free): max|N|=${maxN.toExponential(2)} kN (expect ~0)  ${maxN<1e-6?"PASS":"FAIL"}`);
+  log(`   f3 v=${vT.toFixed(4)} mm, expect ${vExpect.toFixed(4)} mm  ${approx(vT,vExpect,1e-4)?"PASS":"FAIL"}`);
+  log(`   virtW diff=${sol.virtErr.toExponential(2)}  ${sol.virtErr<1e-6?"PASS":"FAIL"}`);
+
+  /* ---- TEST 7: natural frequency of SDOF-equivalent hanging bar ----
+     Same bar as T4: k = EA/L [kN/mm], end mass m = ρAL/2 [kg→kt].
+     ω = √(k/m). ρ=7850, A=0.002 m², L=5 m → m=39.25 kg=0.03925 kt
+     k = 420000/5000 = 84 kN/mm → ω=√(84/0.03925)=46.27 rad/s → f=7.36 Hz */
+  {
+    const sol7 = Solver.solve(s, { selfWeight: { include: true, rho: 7850 } });
+    const res7 = Dynamics.modes(s, sol7.K, sol7.ndof, 7850, sol7.dofIndex, 1);
+    const k7 = EAN / 5000;                       // 84 kN/mm
+    const m7 = 7850 * 0.002 * 5 / 2 / 1000;      // kt
+    const wExp = Math.sqrt(k7 / m7);
+    const fGot = res7.modes[0].freq, fExp = wExp / (2 * Math.PI);
+    log(`T7 eigen: f1=${fGot.toFixed(3)} Hz, expect ${fExp.toFixed(3)} Hz  ${approx(fGot,fExp,1e-3)?"PASS":"FAIL"}`);
+
+    /* ---- TEST 8: step load DAF = 2 (undamped) ----
+       SDOF, suddenly applied constant load: max displacement = 2× static. */
+    const resp = Dynamics.response([Object.assign({}, res7.modes[0], { used: true })],
+      res7.M, sol7.Pf, { lambda: t => 1, tEnd: 3 / fGot, dt: 1 / (60 * fGot), zeta: 0 });
+    let umax = 0;
+    for (let sIdx = 0; sIdx <= resp.nSteps; sIdx++) {
+      const uu = resp.uOfStep(sIdx);
+      for (const v of uu) umax = Math.max(umax, Math.abs(v));
+    }
+    /* static reference: solve K·u=Pf displacement magnitude */
+    let ustat = 0;
+    for (const v of sol7.dispStiffness) ustat = Math.max(ustat, Math.abs(v));
+    const DAF = umax / ustat;
+    log(`T8 step DAF=${DAF.toFixed(3)} (expect 2.000 for undamped SDOF)  ${approx(DAF,2,0.02)?"PASS":"FAIL"}`);
+  }
+
+  /* ---- TEST 9: utilisation / Euler buckling sanity ----
+     Long slender member: A=5 cm², L=10 m, E=21000 kN/cm², compression 40 kN.
+     σ = 40/5 = 8 kN/cm² = 80 MPa. I_sq = A²/12: A=500mm² → I=20833 mm⁴.
+     Pcr = π²·E·I/L² = π²·210000·20833/10000² = 4317 N → σcr = 8.63 MPa (MPa!).
+     σ_allow 157 MPa irrelevant: buckling governs → U = 80/8.63 = 9.27  */
+  {
+    const fake = { A: 5, E: 21000, length: 10 };
+    const U = Structure.utilization(fake, -40, 157);
+    const Amm = 500, Lmm = 10000, Empa = 210000;
+    const I = Amm * Amm / 12;
+    const Pcr = Math.PI * Math.PI * Empa * I / (Lmm * Lmm) / 1000;  // kN
+    const sigCr = Pcr * 1000 / Amm;                                  // MPa
+    const Uexp = 80 / sigCr;
+    log(`T9 buckling: U=${U.toFixed(2)}, expect ${Uexp.toFixed(2)} (Pcr=${Pcr.toFixed(1)} kN, σcr=${sigCr.toFixed(2)} MPa)  ${approx(U,Uexp,1e-6)?"PASS":"FAIL"}`);
+    const Ut = Structure.utilization(fake, 40, 157);
+    log(`   tension util=${Ut.toFixed(3)}, expect ${(80/157).toFixed(3)}  ${approx(Ut,80/157,1e-6)?"PASS":"FAIL"}`);
+  }
+
+  log("\nALL DONE");
+} catch (e) {
+  log("ERROR: " + e.message);
+  log(e.stack);
+}
+</script>
+</body>
+</html>

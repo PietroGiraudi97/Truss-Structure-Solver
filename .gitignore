@@ -1,0 +1,16 @@
+# OS
+Thumbs.db
+.DS_Store
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+
+# Node / misc
+node_modules/
+npm-debug.log*
+
+# Local temp (not part of the tool)
+*.tmp
+*.log
