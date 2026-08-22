@@ -1,4 +1,4 @@
-# Pin Joint Structure Solver
+# Truss Structure Solver
 
 An interactive, browser-based solver for **2D pin-jointed (truss) structures**.
 Draw the structure, apply supports and loads, press **Solve**, and inspect
