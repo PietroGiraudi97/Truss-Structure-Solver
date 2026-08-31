@@ -123,7 +123,27 @@ class Renderer {
         c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(ui.mouse.x, ui.mouse.y); c.stroke();
         c.setLineDash([]);
       }
+
+      // ---- method-of-sections cut line ----
+      if (ui.sectionsCut) this.drawSectionsCut(ui);
     }
+  }
+
+  /* dashed cut line for the method of sections */
+  drawSectionsCut(ui) {
+    const c = this.cx;
+    const cut = ui.sectionsCut;
+    if (!cut || !cut.p1) return;
+    const a = this.W2S(cut.p1.x, cut.p1.y);
+    let b = null;
+    if (cut.p2) b = this.W2S(cut.p2.x, cut.p2.y);
+    else if (ui.mouse) b = { x: ui.mouse.x, y: ui.mouse.y };
+    if (!b) return;
+    c.strokeStyle = "#ffd54f"; c.lineWidth = 2; c.setLineDash([8, 5]);
+    c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
+    c.setLineDash([]);
+    c.fillStyle = "#ffd54f"; c.font = "11px ui-monospace,SFMono-Regular,Consolas,Menlo,monospace";
+    c.fillText("cut", (a.x + b.x) / 2 + 6, (a.y + b.y) / 2 - 6);
   }
 
   /* ---------------- grid ---------------- */
@@ -172,11 +192,22 @@ class Renderer {
       else               { color = "#5c6b7d"; }
       width = 3 + Math.min(4, Math.abs(N) / 60);
     } else if (ui.colorMode === "util" && solvedS) {
-      const u = Structure.utilization(m, structure.solution.memberForces.get(m.id) || 0, ui.sigmaAllowMPa, ui.buckleCheck);
+      const u = Structure.utilization(m, structure.solution.memberForces.get(m.id) || 0, ui.sigmaAllowMaxMPa, ui.sigmaAllowMinMPa, ui.buckleCheck);
       color = utilColor(u);
       width = 3 + Math.min(4, u * 2.5);
     }
     if (ui.selectedMember === m) { width += 2; }
+
+    /* zero-force highlight (educational) */
+    if (ui.zeroForce && ui.zeroForce.has(m.id)) {
+      color = "#e6edf5";
+      width = 2;
+      c.strokeStyle = color; c.lineWidth = width; c.lineCap = "round";
+      c.setLineDash([6, 4]);
+      c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
+      c.setLineDash([]);
+      return;
+    }
 
     c.strokeStyle = color; c.lineWidth = width; c.lineCap = "round";
     c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
@@ -246,7 +277,7 @@ class Renderer {
     }
     c.strokeStyle = "#2a3646"; c.lineWidth = 1;
     c.strokeRect(x0, y0, W, H);
-    c.fillStyle = "#8b9aad"; c.font = "10px Consolas,monospace"; c.textAlign = "center";
+    c.fillStyle = "#8b9aad"; c.font = "10px ui-monospace,SFMono-Regular,Consolas,Menlo,monospace"; c.textAlign = "center";
     const toMPa = v => (v * 10).toFixed(1);          // kN/cm² → MPa
     c.fillText("-" + toMPa(maxSigma), x0 + 14, y0 + H + 12);
     c.fillText("σ [MPa]", x0 + W / 2, y0 + H + 12);
@@ -275,7 +306,7 @@ class Renderer {
     }
     /* thermal: orange ΔT tag near each heated member */
     if (ui.thermalOn) {
-      c.font = "10px Consolas,monospace";
+      c.font = "10px ui-monospace,SFMono-Regular,Consolas,Menlo,monospace";
       for (const m of structure.members) {
         if (!m.dT) continue;
         const a = this.W2S(m.n1.x, m.n1.y), b = this.W2S(m.n2.x, m.n2.y);
@@ -296,7 +327,7 @@ class Renderer {
     c.lineWidth = 2;
     c.beginPath(); c.arc(p.x, p.y, sel ? 6 : 5, 0, Math.PI * 2); c.fill(); c.stroke();
     if (ui.showLabels) {
-      c.fillStyle = "#6d7f92"; c.font = "11px Consolas,monospace";
+      c.fillStyle = "#6d7f92"; c.font = "11px ui-monospace,SFMono-Regular,Consolas,Menlo,monospace";
       c.fillText("n" + n.id, p.x + 8, p.y - 6);
     }
   }
@@ -348,7 +379,7 @@ class Renderer {
     c.lineTo(ex - 10 * Math.cos(a - 0.45), ey - 10 * Math.sin(a - 0.45));
     c.lineTo(ex - 10 * Math.cos(a + 0.45), ey - 10 * Math.sin(a + 0.45));
     c.closePath(); c.fill();
-    c.font = "11px Consolas,monospace";
+    c.font = "11px ui-monospace,SFMono-Regular,Consolas,Menlo,monospace";
     c.fillText(mag.toFixed(0) + " kN", sx, sy - 6);
   }
 
@@ -371,7 +402,7 @@ class Renderer {
     c.lineTo(ex - 9 * Math.cos(a - 0.5), ey - 9 * Math.sin(a - 0.5));
     c.lineTo(ex - 9 * Math.cos(a + 0.5), ey - 9 * Math.sin(a + 0.5));
     c.closePath(); c.fill();
-    c.font = "10px Consolas,monospace";
+    c.font = "10px ui-monospace,SFMono-Regular,Consolas,Menlo,monospace";
     c.fillText("R=" + mag.toFixed(1), ex + 4, ey);
   }
 

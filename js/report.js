@@ -32,7 +32,7 @@ const Report = {
     const Y = v => height - padB - (height - padT - padB) * (v - yMin) / span;
 
     g.strokeStyle = "#b6c0cc"; g.fillStyle = "#333"; g.lineWidth = 1;
-    g.font = "11px Consolas,monospace";
+    g.font = "11px ui-monospace,SFMono-Regular,Consolas,Menlo,monospace";
     g.beginPath(); g.moveTo(padL, padT); g.lineTo(padL, height - padB);
     g.lineTo(width - padR, height - padB); g.stroke();
     g.textAlign = "right"; g.fillText(opts.unit || "", padL - 6, padT + 4);
@@ -51,7 +51,7 @@ const Report = {
       g.fillText("limit " + opts.threshold, width - padR - 4, Y(opts.threshold) - 4);
     }
 
-    g.font = "11px Consolas,monospace";
+    g.font = "11px ui-monospace,SFMono-Regular,Consolas,Menlo,monospace";
     values.forEach((v, i) => {
       const w = Math.min(34, (width - padL - padR) / values.length * 0.62);
       g.fillStyle = opts.colors ? opts.colors(i) : "#4fc3f7";
@@ -83,7 +83,7 @@ const Report = {
     g.strokeStyle = "#b8c0cc"; g.lineWidth = 1;
     g.beginPath(); g.moveTo(padL, padT); g.lineTo(padL, height - padB);
     g.lineTo(width - padR, height - padB); g.stroke();
-    g.fillStyle = "#444"; g.font = "11px Consolas,monospace"; g.textAlign = "right";
+    g.fillStyle = "#444"; g.font = "11px ui-monospace,SFMono-Regular,Consolas,Menlo,monospace"; g.textAlign = "right";
     g.fillText(yMax.toFixed(2), padL - 5, Y(yMax) + 3);
     g.fillText(yMin.toFixed(2), padL - 5, Y(yMin) + 3);
     g.fillText("0", padL - 5, Y(0) + 3);
@@ -97,7 +97,7 @@ const Report = {
       tArr.forEach((t, i) => { const x = X(t), y = Y(s.y[i]); i === 0 ? g.moveTo(x, y) : g.lineTo(x, y); });
       g.stroke();
     });
-    g.fillStyle = "#666"; g.textAlign = "center"; g.font = "11px Consolas,monospace";
+    g.fillStyle = "#666"; g.textAlign = "center"; g.font = "11px ui-monospace,SFMono-Regular,Consolas,Menlo,monospace";
     g.fillText(tMin.toFixed(1), padL + 6, height - 6);
     g.fillText(tMax.toFixed(1), width - padR - 6, height - 6);
     g.fillText("t (s)", (width + padL - padR) / 2, height - 6);
@@ -109,7 +109,6 @@ const Report = {
     const { structure, sol, renderer, ui, modal, dynResp } = data;
     const nodes = structure.nodes, members = structure.members;
     const now = new Date().toLocaleString();
-
     /* ---------- images (live-rendered snapshots) ---------- */
     /* 1) Undeflected structure — plain geometry, supports & loads, plus the
        distributed effects that were actually included in the analysis.    */
@@ -132,7 +131,7 @@ const Report = {
     const nLbl = nodes.map(n => "n" + n.id);
     const fForces = members.map(m => sol.memberForces.get(m.id) || 0);
     const fSigma = members.map(m => (sol.memberForces.get(m.id) || 0) / m.A * 10);
-    const fUtil = members.map(m => Structure.utilization(m, sol.memberForces.get(m.id) || 0, ui.sigmaAllowMPa, ui.buckleCheck));
+    const fUtil = members.map(m => Structure.utilization(m, sol.memberForces.get(m.id) || 0, ui.sigmaAllowMaxMPa, ui.sigmaAllowMinMPa, ui.buckleCheck));
     const fDisp = nodes.map(n => { const d = Solver.nodeDisp(sol, n); return Math.hypot(d.ux, d.uy); });
     const signedColor = i => fForces[i] < 0 ? "#e8710a" : "#1a73d8";
     const utilColor = i => fUtil[i] > 1 ? "#d33434" : fUtil[i] > 0.8 ? "#e8710a" : "#188038";
@@ -184,7 +183,7 @@ const Report = {
 
     const memRows = members.map(m => {
       const N = sol.memberForces.get(m.id) || 0;
-      const U = Structure.utilization(m, N, ui.sigmaAllowMPa, ui.buckleCheck);
+      const U = Structure.utilization(m, N, ui.sigmaAllowMaxMPa, ui.sigmaAllowMinMPa, ui.buckleCheck);
       const state = Math.abs(N) < 0.05 ? "zero" : N > 0 ? "T" : "C";
       return `<tr><td>${m.id}</td><td>n${m.n1.id}–n${m.n2.id}</td><td>${m.length.toFixed(2)}</td>
         <td>${m.A}</td><td>${N.toFixed(2)}</td><td>${(N / m.A * 10).toFixed(1)}</td>
@@ -201,7 +200,7 @@ const Report = {
 
     return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Truss Analysis Report</title>
       <style>
-        body{font-family:'Segoe UI',Arial,sans-serif;margin:34px 46px;color:#1c2430;font-size:13px;line-height:1.5}
+        body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;margin:34px 46px;color:#1c2430;font-size:13px;line-height:1.5}
         h1{font-size:24px;border-bottom:3px solid #1a4b8c;padding-bottom:8px}
         h2{font-size:17px;margin:30px 0 8px;color:#1a4b8c;border-bottom:1px solid #c7d3e0;padding-bottom:4px}
         table{border-collapse:collapse;width:100%;font-size:12px;margin:8px 0}
@@ -225,7 +224,7 @@ const Report = {
       <table class="kv">
         <tr><td>Joints / members</td><td>${nodes.length} / ${members.length}</td></tr>
         <tr><td>Applied load Σ</td><td>(${totalPx.toFixed(1)}, ${totalPy.toFixed(1)}) kN</td></tr>
-        <tr><td>Allowable stress σ_allow</td><td>${ui.sigmaAllowMPa} MPa</td></tr>
+        <tr><td>Allowable stress σ_allow</td><td>max ${ui.sigmaAllowMaxMPa} MPa (tension) / min ${ui.sigmaAllowMinMPa} MPa (compression)</td></tr>
         <tr><td>Buckling check</td><td>${ui.buckleCheck ? "Euler (pin-ended)" : "off"}</td></tr>
         ${sol.selfWeight > 0 ? `<tr><td>Self weight</td><td>${sol.selfWeight.toFixed(2)} kN (ρ=${sol.rho} kg/m³)</td></tr>` : ""}
         ${sol.thermal ? `<tr><td>Thermal</td><td>α=${sol.alpha} µε/°C</td></tr>` : ""}
@@ -260,11 +259,53 @@ const Report = {
       <img src="${imgReac}" alt="support reactions bar chart">
       <table><tr><th>Joint</th><th>Rx (kN)</th><th>Ry (kN)</th></tr>${reactRows}</table>
 
+      ${this._workedHtml(structure, sol)}
+      ${this._influenceHtml(structure, sol)}
+
       ${dynHtml}
 
       <p class="meta">First-order linear elastic analysis by the unit-load (virtual-work) method.
       Buckling: Euler, pin-ended member; local buckling &amp; code checks excluded. Dynamic results assume
       lumped masses and small displacements.</p>
       </body></html>`;
+  },
+
+  /* ---------- worked solution (method of joints) ---------- */
+  _workedHtml(structure, sol) {
+    let html = `<h2>6. Worked solution — method of joints</h2>`;
+    const res = Worked.joints(structure, sol);
+    if (!res.allKnown) {
+      html += `<p class="meta">The truss is statically indeterminate or has a mechanism, so the method of joints cannot solve every member by equilibrium alone. Use the exact stiffness solution (Section 3) for the full result.</p>`;
+      return html;
+    }
+    html += `<p class="meta">Each joint is solved in turn from ΣFx = 0 and ΣFy = 0, using the reactions and previously-found member forces.</p>`;
+    res.steps.forEach((st, i) => {
+      const j = st.joint;
+      const parts = st.unknowns.map((m, k) => {
+        const v = st.values[k];
+        const state = Math.abs(v) < 0.05 ? "zero" : (v > 0 ? "T" : "C");
+        return `M${m.id} = ${v.toFixed(2)} kN (${state})`;
+      });
+      html += `<p><b>Step ${i + 1} — joint n${j.id}</b> (${j.x.toFixed(2)}, ${j.y.toFixed(2)}): ΣFx: ${st.fx.toFixed(2)} + ΣNx = 0, ΣFy: ${st.fy.toFixed(2)} + ΣNy = 0 → ${parts.join(", ")}</p>`;
+    });
+    return html;
+  },
+
+  /* ---------- influence lines ---------- */
+  _influenceHtml(structure, sol) {
+    const members = structure.members;
+    if (members.length === 0) return "";
+    /* pick a representative member (first) and a reaction for the report */
+    const pick = members[0];
+    const dataM = Influence.line(structure, { axis: "y", memberId: pick.id });
+    const cv = document.createElement("canvas");
+    cv.width = 760; cv.height = 240;
+    cv.style.width = "100%";
+    Influence.draw(cv, dataM, { title: `Influence line of M${pick.id} (unit vertical load)` });
+    const img = cv.toDataURL("image/png");
+    return `<h2>7. Influence lines</h2>
+      <p class="meta">A unit load moves along the joints; the plot shows the response of the chosen quantity at each load position (exact stiffness solution).</p>
+      <img src="${img}" alt="influence line of a member force">
+      <p class="meta">Example shown: member M${pick.id}. Use the <b>Learn → Influence lines</b> tool in the app to plot any member force or reaction.</p>`;
   }
 };

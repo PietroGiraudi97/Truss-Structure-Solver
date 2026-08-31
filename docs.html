@@ -17,7 +17,7 @@
     --accent:#4fc3f7; --accent2:#ffb74d; --ok:#81c784;
   }
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:"Segoe UI",system-ui,Arial,sans-serif;background:var(--bg);color:var(--txt);
+  body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background:var(--bg);color:var(--txt);
        line-height:1.65;font-size:15px;}
   header{position:sticky;top:0;z-index:5;background:var(--bg2);border-bottom:1px solid var(--line);
          padding:10px 24px;display:flex;gap:16px;align-items:center;}
@@ -34,7 +34,7 @@
   table{border-collapse:collapse;margin:12px 0;font-size:14px;}
   th,td{border:1px solid var(--line);padding:6px 12px;text-align:left;}
   th{background:var(--bg2);color:var(--accent);}
-  code{background:var(--bg2);border-radius:4px;padding:1px 5px;font-family:Consolas,monospace;font-size:13px;}
+  code{background:var(--bg2);border-radius:4px;padding:1px 5px;font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace;font-size:13px;}
   .note{border-left:3px solid var(--accent);background:var(--bg2);padding:10px 14px;margin:12px 0;border-radius:0 8px 8px 0;}
   .note.warn{border-color:var(--accent2);}
   .toc{background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:14px 20px;margin:16px 0;}
@@ -73,6 +73,7 @@ and the mathematics behind the solver. The implementation follows this formulati
   <a href="#sec12">12. Limitations</a>
   <a href="#sec13">13. Dynamic analysis (modal superposition)</a>
   <a href="#sec14">14. Design checks (utilisation &amp; buckling)</a>
+  <a href="#sec15">15. Educational tools (method of joints, sections, influence lines)</a>
 </div>
 
 <h2 id="sec1">1. Problem statement &amp; assumptions</h2>
@@ -304,6 +305,53 @@ shown red ("FAILS"); the member table, canvas colour mode *Utilisation*, the CSV
 printable report all carry these values. <b>Caveat</b>: this is an elastic, first-order check —
 no local buckling, no effective-length factors beyond pin-pin, and no interaction with bending
 (bars are axial only), so for code work it is a sizing aid, not a substitute for a code check.</p>
+
+<h2 id="sec15">15. Educational tools (method of joints, sections, influence lines)</h2>
+<p>Beyond the exact stiffness/virtual-work solver, the app provides teaching tools
+(Step 5 ▸ <b>Learn</b>) that reproduce the classical hand methods covered in an
+undergraduate structures course.</p>
+
+<h3>15.1 Method of joints (worked)</h3>
+<p>For a <b>statically determinate</b> truss, every member force can be found from joint
+equilibrium alone. The program visits each joint with at most two unknown member forces
+and solves the two equilibrium equations</p>
+<div class="math" data-display="1">\sum F_x = 0:\quad \sum_m c_{x,m} N_m = -P_x - R_x, \qquad
+\sum F_y = 0:\quad \sum_m c_{y,m} N_m = -P_y - R_y</div>
+<p>where <span class="math">(c_x, c_y)</span> are the direction cosines of each member away from
+the joint and the right-hand side collects the applied load, the reaction and the
+already-known forces of previously solved members. Each step is recorded and shown in
+order, so the student sees exactly how the forces propagate through the truss. If the
+truss is indeterminate or has a mechanism, the method cannot close and the app says so,
+pointing to the exact solver instead.</p>
+
+<h3>15.2 Method of sections</h3>
+<p>The user draws a cut line across the truss. The program isolates the free body on the
+smaller side and enforces the three global equilibrium equations — two force sums and a
+moment sum about the free-body centroid:</p>
+<div class="math" data-display="1">\sum F_x = 0,\qquad \sum F_y = 0,\qquad \sum M_P = 0</div>
+<p>with the cut-member forces as the unknowns. This works when the cut crosses at most
+three members (three equations, three unknowns). The results are cross-checked against
+the exact stiffness solution.</p>
+
+<h3>15.3 Zero-force members</h3>
+<p>Two classic rules are applied to unloaded joints:</p>
+<ul>
+  <li><b>Two members, no load:</b> if a joint connects exactly two non-collinear members
+      and carries no external load or reaction, both members carry zero force.</li>
+  <li><b>Three members, two collinear, no load:</b> the non-collinear member carries zero
+      force.</li>
+</ul>
+<p>Detected members are drawn dashed-white on the canvas with an explanation of the rule
+that flagged them.</p>
+
+<h3>15.4 Influence lines</h3>
+<p>An influence line shows how a single moving unit load affects one response quantity.
+Because truss loads act only at joints, the influence line is a piecewise-linear function
+over the joints. The program re-solves the exact stiffness system with a unit load placed
+at each joint in turn and reads off the chosen member force or reaction:</p>
+<div class="math" data-display="1">\text{IL}(x_k) = \text{response to a unit load at joint } k</div>
+<p>This is valid for determinate and indeterminate trusses alike. The plot can be produced
+for any member force or any reaction component, under vertical or horizontal loading.</p>
 
 <p class="dim" style="margin-top:30px">Generated for the Pin Joint Structure Solver project —
 see README.md for usage, js/solver.js for the implementation of every formula above.</p>

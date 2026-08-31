@@ -34,6 +34,7 @@
       <span class="sep"></span>
       <button id="btn-zoomfit" class="tbtn" title="Fit structure to view">Fit</button>
       <a href="docs.html" class="tbtn" style="text-decoration:none" title="Methodology &amp; mathematical formulation">Docs</a>
+      <button id="btn-help"    class="tbtn" title="Help &amp; shortcuts">?</button>
       <button id="btn-solve"   class="tbtn solve" title="Solve the structure">&#9654; Solve</button>
     </div>
   </header>
@@ -50,38 +51,8 @@
             <button id="tool-node"     class="tool active" data-tool="node"><span class="ticon">&#9679;</span>Node</button>
             <button id="tool-member"   class="tool" data-tool="member"><span class="ticon">&#9586;</span>Member</button>
             <button id="tool-support"  class="tool" data-tool="support"><span class="ticon">&#9650;</span>Support</button>
-            <button id="tool-select"   class="tool" data-tool="select"><span class="ticon">&#9998;</span>Edit</button>
           </div>
           <p class="hint" id="tool-hint">Click on empty space to create a node. Click a node to select it (then use Edit tool popup).</p>
-        </div>
-      </section>
-
-      <section class="panel-block" id="selection-block">
-        <h3>Selection</h3>
-        <div id="selection-info"><p class="hint">Nothing selected.</p></div>
-        <div id="selection-edit" style="display:none">
-          <div class="fieldrow"><label>X (m)</label><input id="sel-x" type="number" step="0.1"></div>
-          <div class="fieldrow"><label>Y (m)</label><input id="sel-y" type="number" step="0.1"></div>
-          <div class="fieldrow"><label>Load Px (kN)</label><input id="sel-px" type="number" step="1"></div>
-          <div class="fieldrow"><label>Load Py (kN)</label><input id="sel-py" type="number" step="1"></div>
-          <div class="fieldrow" title="Extra lumped mass for dynamic analysis"><label>Mass (kg)</label><input id="sel-mass" type="number" step="10" min="0"></div>
-          <div class="fieldrow"><label>Support</label>
-            <select id="sel-support">
-              <option value="none">None</option>
-              <option value="pin">Pin (x,y)</option>
-              <option value="rollerx">Roller &#8992;&#8993; (y fixed)</option>
-              <option value="rollery">Roller | (x fixed)</option>
-            </select>
-          </div>
-          <button id="btn-del-node" class="tbtn danger small">Delete Node</button>
-        </div>
-        <div id="member-edit" style="display:none">
-          <div class="fieldrow"><label>E (kN/cm²)</label><input id="sel-mE" type="number" step="100"></div>
-          <div class="fieldrow"><label>A (cm²)</label><input id="sel-mA" type="number" step="1"></div>
-          <div class="fieldrow"><label>Section</label><select id="sel-mSection"></select></div>
-          <div class="fieldrow"><label>I (cm⁴)</label><input id="sel-mI" type="number" step="1" min="0" title="For buckling check; 0 = solid-square equivalent"></div>
-          <div class="fieldrow"><label>ΔT (°C)</label><input id="sel-mdT" type="number" step="5"></div>
-          <button id="btn-del-member" class="tbtn danger small">Delete Member</button>
         </div>
       </section>
 
@@ -99,10 +70,12 @@
           </div>
           <div class="fieldrow"><label>New Member E (kN/cm²)</label><input id="inp-E" type="number" value="21000" step="100"></div>
           <div class="fieldrow"><label>New Member A (cm²)</label><input id="inp-A" type="number" value="20" step="1"></div>
+          <div class="fieldrow"><label>Density ρ (kg/m³)</label><input id="inp-rho" type="number" value="7850" step="50" title="Material density — used for self weight and dynamic mass"></div>
           <div class="fieldrow"><label>Section (new members)</label>
             <select id="sel-section"></select>
           </div>
-          <div class="fieldrow"><label>σ allow (MPa)</label><input id="inp-sallow" type="number" value="157" step="1"></div>
+          <div class="fieldrow"><label>σ allow max (MPa)</label><input id="inp-sallow-max" type="number" value="157" step="1" title="Maximum allowable tensile stress"></div>
+          <div class="fieldrow"><label>σ allow min (MPa)</label><input id="inp-sallow-min" type="number" value="157" step="1" title="Maximum allowable compressive stress (magnitude)"></div>
           <div class="chkrow"><input type="checkbox" id="chk-buckle" checked><label for="chk-buckle">Buckling check (Euler, pin-ended)</label></div>
           <div class="fieldrow"><label>Color members by</label>
             <select id="sel-colormode">
@@ -111,7 +84,7 @@
               <option value="none">Mono</option>
             </select>
           </div>
-          <p class="hint">Utilisation = σ/σ_limit, σ_limit = min(σ_allow, buckling). Red &gt; 1 (fails).</p>
+          <p class="hint">Utilisation = σ/σ_limit. Tension limited by σ_allow max; compression by min(σ_allow min, buckling). Red &gt; 1 (fails).</p>
         </div>
       </section>
 
@@ -122,7 +95,6 @@
             <button id="tool-load" class="tool" data-tool="load"><span class="ticon">&#8595;</span>Point load</button>
           </div>
           <div class="chkrow"><input type="checkbox" id="chk-sw"><label for="chk-sw">Self weight</label></div>
-          <div class="fieldrow"><label>Density ρ (kg/m³)</label><input id="inp-rho" type="number" value="7850" step="50"></div>
           <div class="chkrow"><input type="checkbox" id="chk-th"><label for="chk-th">Thermal (ΔT)</label></div>
           <div class="fieldrow"><label>α coefficient (µε/°C)</label><input id="inp-alpha" type="number" value="12" step="0.5"></div>
           <div class="fieldrow"><label>ΔT all (°C)</label><input id="inp-dTall" type="number" value="0" step="5"></div>
@@ -171,6 +143,24 @@
         </div>
       </section>
 
+      <section class="panel-block step" data-step="5">
+        <h3 class="acc-head"><span class="stepnum">5</span> Learn <span class="step-status"></span></h3>
+        <div class="acc-body">
+          <p class="hint">Teaching tools that explain <em>how</em> the forces are found.</p>
+          <div class="chkrow"><input type="checkbox" id="chk-zero"><label for="chk-zero">Highlight zero-force members</label></div>
+          <div class="fieldrow">
+            <button id="btn-worked" class="tbtn small">&#128214; Method of joints (worked)</button>
+          </div>
+          <div class="fieldrow">
+            <button id="btn-sections" class="tbtn small">&#9998; Method of sections</button>
+          </div>
+          <div class="fieldrow">
+            <button id="btn-influence" class="tbtn small">&#8596; Influence lines</button>
+          </div>
+          <div id="learn-output" class="learn-output"><p class="hint">Solve the structure first, then pick a tool above.</p></div>
+        </div>
+      </section>
+
       <section class="panel-block">
         <h3>Display</h3>
         <div class="chkrow"><input type="checkbox" id="chk-grid" checked><label for="chk-grid">Grid</label></div>
@@ -191,6 +181,42 @@
     <!-- ============ CANVAS AREA ============ -->
     <div id="canvas-wrap">
       <canvas id="canvas"></canvas>
+
+      <!-- floating Edit tool + selection box (over the drawing area) -->
+      <div id="canvas-tools">
+        <button id="tool-select" class="tool" data-tool="select"><span class="ticon">&#9998;</span>Edit</button>
+      </div>
+      <div id="selection-box" style="display:none">
+        <div class="sel-head">
+          <div id="selection-info"><p class="hint">Nothing selected.</p></div>
+          <button id="btn-sel-close" class="tbtn small" title="Close">&#10005;</button>
+        </div>
+        <div id="selection-edit" style="display:none">
+          <div class="fieldrow"><label>X (m)</label><input id="sel-x" type="number" step="0.1"></div>
+          <div class="fieldrow"><label>Y (m)</label><input id="sel-y" type="number" step="0.1"></div>
+          <div class="fieldrow"><label>Load Px (kN)</label><input id="sel-px" type="number" step="1"></div>
+          <div class="fieldrow"><label>Load Py (kN)</label><input id="sel-py" type="number" step="1"></div>
+          <div class="fieldrow" title="Extra lumped mass for dynamic analysis"><label>Mass (kg)</label><input id="sel-mass" type="number" step="10" min="0"></div>
+          <div class="fieldrow"><label>Support</label>
+            <select id="sel-support">
+              <option value="none">None</option>
+              <option value="pin">Pin (x,y)</option>
+              <option value="rollerx">Roller &#8992;&#8993; (y fixed)</option>
+              <option value="rollery">Roller | (x fixed)</option>
+            </select>
+          </div>
+          <button id="btn-del-node" class="tbtn danger small">Delete Node</button>
+        </div>
+        <div id="member-edit" style="display:none">
+          <div class="fieldrow"><label>E (kN/cm²)</label><input id="sel-mE" type="number" step="100"></div>
+          <div class="fieldrow"><label>A (cm²)</label><input id="sel-mA" type="number" step="1"></div>
+          <div class="fieldrow"><label>Section</label><select id="sel-mSection"></select></div>
+          <div class="fieldrow"><label>I (cm⁴)</label><input id="sel-mI" type="number" step="1" min="0" title="For buckling check; 0 = solid-square equivalent"></div>
+          <div class="fieldrow"><label>ΔT (°C)</label><input id="sel-mdT" type="number" step="5"></div>
+          <button id="btn-del-member" class="tbtn danger small">Delete Member</button>
+        </div>
+      </div>
+
       <div id="empty-hint">
         <b>Getting started</b>
         <ol>
@@ -240,6 +266,9 @@
             <tbody></tbody>
           </table>
         </div>
+        <div class="fieldrow" style="margin-top:6px">
+          <button id="btn-export-disp" class="tbtn small" title="Export joint displacements &amp; reactions">&#8681; CSV</button>
+        </div>
       </section>
 
       <section class="panel-block" id="dyn-block">
@@ -254,13 +283,69 @@
         <canvas id="canvas-dyn" width="260" height="110" style="width:100%;background:var(--bg2);border:1px solid var(--line);border-radius:6px;margin-top:6px"></canvas>
         <p class="hint" id="dyn-plot-cap">Displacement of max-dof vs time will appear here.</p>
       </section>
+
+      <section class="panel-block" id="infl-block" style="display:none">
+        <h3>Influence line <span class="sub">moving unit load</span></h3>
+        <div class="fieldrow"><label>Response</label>
+          <select id="sel-infl">
+            <option value="">— choose —</option>
+          </select>
+        </div>
+        <div class="fieldrow"><label>Load direction</label>
+          <select id="sel-infl-axis">
+            <option value="y">Vertical (↓)</option>
+            <option value="x">Horizontal (→)</option>
+          </select>
+        </div>
+        <canvas id="canvas-infl" width="300" height="130" style="width:100%;background:var(--bg2);border:1px solid var(--line);border-radius:6px;margin-top:6px"></canvas>
+        <p class="hint" id="infl-cap">A unit load moves along the joints; the plot shows the response at each position.</p>
+      </section>
     </aside>
+  </div>
+</div>
+
+<!-- ============ HELP MODAL ============ -->
+<div id="help-modal" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h3>Help &amp; shortcuts</h3>
+      <button id="btn-help-close" class="tbtn small">&#10005;</button>
+    </div>
+    <div class="modal-body">
+      <h4>Workflow</h4>
+      <ol>
+        <li><b>Draw</b> — pick a template (top bar) or use the <b>Node</b> tool to place joints, <b>Member</b> to connect them.</li>
+        <li><b>Support</b> — click a joint to cycle pin / rollers. You need at least 3 reaction components.</li>
+        <li><b>Load</b> — click a joint and enter Px / Py in the panel.</li>
+        <li><b>Material &amp; section</b> — set E, A, density and σ_allow for new members (Step 2). To change a single member, select it with the <b>Edit</b> tool and edit its properties in the floating box.</li>
+        <li><b>Solve</b> — press <b>▶ Solve</b> (or <span class="kbd-hint">S</span>).</li>
+        <li><b>Learn</b> — use the Step 5 tools to see the method of joints, sections, and influence lines.</li>
+      </ol>
+      <h4>Keyboard shortcuts</h4>
+      <table class="help-keys">
+        <tr><td><span class="kbd-hint">1–5</span></td><td>Switch tools (node, member, support, load, edit)</td></tr>
+        <tr><td><span class="kbd-hint">S</span></td><td>Solve</td></tr>
+        <tr><td><span class="kbd-hint">F</span></td><td>Fit structure to view</td></tr>
+        <tr><td><span class="kbd-hint">Ctrl+Z</span></td><td>Undo</td></tr>
+        <tr><td><span class="kbd-hint">Ctrl+S</span></td><td>Save structure (JSON)</td></tr>
+        <tr><td><span class="kbd-hint">Del</span></td><td>Delete selected node / member</td></tr>
+        <tr><td><span class="kbd-hint">Esc</span></td><td>Cancel in-progress member / clear selection</td></tr>
+        <tr><td><span class="kbd-hint">Shift-drag</span> / <span class="kbd-hint">middle-drag</span></td><td>Pan</td></tr>
+        <tr><td><span class="kbd-hint">Wheel</span></td><td>Zoom</td></tr>
+      </table>
+      <h4>Units</h4>
+      <p class="hint">Geometry in <b>m</b>, loads in <b>kN</b>, E in <b>kN/cm²</b>, A in <b>cm²</b>, displacements in <b>mm</b>, stress in <b>MPa</b>.</p>
+      <h4>Stability</h4>
+      <p class="hint">A stable planar truss needs <b>m + r ≥ 2j</b> and at least 3 non-concurrent reaction components. The status bar shows the counts.</p>
+    </div>
   </div>
 </div>
 
 <script src="js/structure.js"></script>
 <script src="js/solver.js"></script>
 <script src="js/dynamics.js"></script>
+<script src="js/worked.js"></script>
+<script src="js/influence.js"></script>
 <script src="js/report.js"></script>
 <script src="js/renderer.js"></script>
 <script src="js/app.js"></script>

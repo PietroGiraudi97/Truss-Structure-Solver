@@ -66,6 +66,21 @@ installation, server or internet connection needed).
   modal superposition (`M·ü + C·u̇ + K·u = P(t)`, ζ editable). The plot shows
   the monitored-dof displacement vs. time and the dynamic amplification
   factor (DAF); the canvas animates the deflected, stress-coloured shape.
+- **Educational "Learn" tools (Step 5)** — teaching aids that explain *how*
+  the forces are found, ideal for the undergraduate syllabus:
+  - **Method of joints (worked)** — solves a statically determinate truss
+    joint-by-joint and shows each equilibrium step (ΣFx = 0, ΣFy = 0) with the
+    resulting member forces, in the order the joints are solved.
+  - **Method of sections** — click two points to draw a cut line; the program
+    isolates the smaller free body and solves the cut-member forces from the
+    three global equilibrium equations (ΣFx, ΣFy, ΣM).
+  - **Zero-force member detection** — highlights members that carry no force
+    by the classic textbook rules (two-member unloaded joint; three-member
+    joint with two collinear members), with an explanation for each.
+  - **Influence lines** — plot how a moving unit load affects any member
+    force or reaction, for vertical or horizontal loading.
+- **Help modal** (top-bar `?`) — a quick reference for the workflow, keyboard
+  shortcuts and units.
 - **Units**: geometry in **m**, loads in **kN**, `E` in **kN/cm²**
   (steel ≈ 21000), `A` in **cm²**, output displacements in **mm**.
 
@@ -76,6 +91,8 @@ index.html      UI shell
 css/style.css   styling
 js/structure.js data model (nodes, members, sample truss)
 js/solver.js    virtual-work + stiffness solver and linear algebra
+js/worked.js    method of joints (worked), method of sections, zero-force detection
+js/influence.js influence lines for members & reactions
 js/renderer.js  canvas drawing / hit-testing / view transforms
 js/dynamics.js  modal analysis + time-history response
 js/app.js       UI controller (tools, events, results)
@@ -93,6 +110,8 @@ docs.html       methodology & mathematical formulation (KaTeX-rendered;
   Howe, K-truss, bracket, mast).
 - `test.html` verifies the solver against hand-computed textbook results.
 - Keyboard: `1–5` switch tools, `S` solve, `F` fit, `Ctrl+Z` undo, `Ctrl+S` save.
+- Use **Step 5 ▸ Learn** for the method of joints (worked), method of sections,
+  zero-force detection and influence lines.
 
 ## Who is this for?
 

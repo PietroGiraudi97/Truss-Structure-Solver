@@ -6,6 +6,8 @@
 <script src="js/structure.js"></script>
 <script src="js/solver.js"></script>
 <script src="js/dynamics.js"></script>
+<script src="js/worked.js"></script>
+<script src="js/influence.js"></script>
 <script>
 const out = [];
 const log = s => { out.push(s); document.getElementById("out").textContent = out.join("\n"); };
@@ -176,15 +178,76 @@ try {
      σ_allow 157 MPa irrelevant: buckling governs → U = 80/8.63 = 9.27  */
   {
     const fake = { A: 5, E: 21000, length: 10 };
-    const U = Structure.utilization(fake, -40, 157);
+    const U = Structure.utilization(fake, -40, 157, 157);
     const Amm = 500, Lmm = 10000, Empa = 210000;
     const I = Amm * Amm / 12;
     const Pcr = Math.PI * Math.PI * Empa * I / (Lmm * Lmm) / 1000;  // kN
     const sigCr = Pcr * 1000 / Amm;                                  // MPa
     const Uexp = 80 / sigCr;
     log(`T9 buckling: U=${U.toFixed(2)}, expect ${Uexp.toFixed(2)} (Pcr=${Pcr.toFixed(1)} kN, σcr=${sigCr.toFixed(2)} MPa)  ${approx(U,Uexp,1e-6)?"PASS":"FAIL"}`);
-    const Ut = Structure.utilization(fake, 40, 157);
+    const Ut = Structure.utilization(fake, 40, 157, 157);
     log(`   tension util=${Ut.toFixed(3)}, expect ${(80/157).toFixed(3)}  ${approx(Ut,80/157,1e-6)?"PASS":"FAIL"}`);
+  }
+
+  /* ---- TEST 10: method of joints matches exact solver (bracket) ----
+     Use the T2 bracket (determinate). Worked.joints should reproduce the
+     exact member forces from the stiffness solution.                    */
+  {
+    s = new Structure();
+    const w1 = s.addNode(0, 2); w1.support = "pin";
+    const w2 = s.addNode(0, 0); w2.support = "pin";
+    const f3 = s.addNode(4, 2);
+    const f4 = s.addNode(4, 0); f4.py = -50;
+    s.addMember(w1, f3, E, A);
+    s.addMember(w2, f4, E, A);
+    s.addMember(w1, f4, E, A);
+    s.addMember(f3, f4, E, A);
+    const sol10 = Solver.solve(s);
+    const wj = Worked.joints(s, sol10);
+    let ok10 = wj.allKnown;
+    s.members.forEach(m => {
+      const exact = sol10.memberForces.get(m.id);
+      const worked = wj.force.get(m.id);
+      if (!approx(worked, exact, 1e-6)) ok10 = false;
+    });
+    log(`T10 method of joints: allKnown=${wj.allKnown}, ${wj.steps.length} steps, matches exact=${ok10}  ${ok10?"PASS":"FAIL"}`);
+  }
+
+  /* ---- TEST 11: zero-force detection on the bracket truss ----
+     The T2 bracket has two zero-force members: the top chord n1-n3 and
+     the vertical n3-n4 (both N=0, joint n3 has 2 members and no load). */
+  {
+    s = new Structure();
+    const w1 = s.addNode(0, 2); w1.support = "pin";
+    const w2 = s.addNode(0, 0); w2.support = "pin";
+    const f3 = s.addNode(4, 2);
+    const f4 = s.addNode(4, 0); f4.py = -50;
+    s.addMember(w1, f3, E, A);   // m1 top chord (zero)
+    s.addMember(w2, f4, E, A);   // m2 bottom chord
+    s.addMember(w1, f4, E, A);   // m3 diagonal
+    s.addMember(f3, f4, E, A);   // m4 vertical (zero)
+    const sol11 = Solver.solve(s);
+    const zf = Worked.zeroForce(s, sol11);
+    const m1 = s.memberBetween(w1, f3), m4 = s.memberBetween(f3, f4);
+    const ok11 = zf.some(z => z.member === m1) && zf.some(z => z.member === m4);
+    log(`T11 zero-force: found ${zf.length} (expect 2: M${m1.id}, M${m4.id})  ${ok11?"PASS":"FAIL"}`);
+  }
+
+  /* ---- TEST 12: influence line of a reaction ----
+     For a simply-supported beam-like truss, the influence line of the
+     left reaction Ry under a unit vertical load at joint x is
+     (L - x)/L. Use the Pratt sample: left support at x=0, right at x=12.
+     Check the value at the right support joint (x=12) -> Ry = 0, and at
+     the left support (x=0) -> Ry = 1.                                        */
+  {
+    s = Structure.samplePratt();
+    const sol12 = Solver.solve(s);
+    const left = s.nodes[0];                       // bottom[0] pin at x=0
+    const right = s.nodes[6];                      // bottom[6] roller at x=12
+    const data = Influence.line(s, { axis: "y", reactionNodeId: left.id, reactionAxis: "y" });
+    const atLeft = data.joints.find(j => j.node === left).value;
+    const atRight = data.joints.find(j => j.node === right).value;
+    log(`T12 influence Ry(left): at left=${atLeft.toFixed(3)} (expect 1), at right=${atRight.toFixed(3)} (expect 0)  ${approx(atLeft,1,1e-6)&&approx(atRight,0,1e-6)?"PASS":"FAIL"}`);
   }
 
   log("\nALL DONE");

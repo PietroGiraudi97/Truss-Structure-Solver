@@ -279,21 +279,22 @@ class Structure {
   static resetIds(v) { _nextNodeId = v; _nextMemberId = v; }
 
   /* ---------------- design: member utilisation ----------------
-     σ = N/A.  Tension limited by σ_allow (yield/FS).
-     Compression also limited by Euler buckling of the pin-ended member:
-        P_cr = π²·E·I / L².  I from the member's real I (cm⁴) if set,
-     else an equivalent solid square I = A²/12.                       */
-  static utilization(m, N, sigmaAllowMpA, buckle = true) {
+     σ = N/A.  Tension limited by σ_allow_max (yield/FS).
+     Compression limited by min(σ_allow_min, Euler buckling of the
+     pin-ended member):  P_cr = π²·E·I / L².  I from the member's real
+     I (cm⁴) if set, else an equivalent solid square I = A²/12.       */
+  static utilization(m, N, sigmaAllowMaxMpA, sigmaAllowMinMpA, buckle = true) {
     const A_mm2 = m.A * 100;                       // cm² -> mm²
     const N_N = Math.abs(N) * 1000;                // kN -> N
     const E_MPa = m.E * 10;                        // kN/cm² -> MPa (N/mm²)
     const sigma = N_N / A_mm2;                     // MPa
-    if (N >= 0 || !buckle) return Math.abs(sigma) / sigmaAllowMpA;   // tension or no buckling
+    if (N >= 0) return Math.abs(sigma) / sigmaAllowMaxMpA;   // tension
+    if (!buckle) return Math.abs(sigma) / sigmaAllowMinMpA;  // compression, no buckling
     const L_mm = m.length * 1000;
     const I_mm4 = m.I > 0 ? m.I * 1e4 : A_mm2 * A_mm2 / 12;         // cm⁴ -> mm⁴
     const Pcr_N = Math.PI * Math.PI * E_MPa * I_mm4 / (L_mm * L_mm);
     const sigmaCr = Pcr_N / A_mm2;                 // MPa
-    const limit = Math.min(sigmaAllowMpA, sigmaCr);
+    const limit = Math.min(sigmaAllowMinMpA, sigmaCr);
     return Math.abs(sigma) / limit;
   }
 

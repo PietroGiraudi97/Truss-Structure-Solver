@@ -14,13 +14,16 @@
     showGrid: true, snap: true, showLabels: true,
     showOriginal: true, showLegend: true,
     colorMode: "force",            // "force" | "util" | "none"
-    sigmaAllowMPa: 157,            // S235 yield 235 / FS 1.5
+    sigmaAllowMaxMPa: 157,         // S235 yield 235 / FS 1.5 (tension)
+    sigmaAllowMinMPa: 157,         // compression (magnitude)
     buckleCheck: true,
     defaultI: 0,                   // cm⁴ for new members (0 = solid eq.)
     defScale: 50, autoScale: false,
     selectedNode: null, selectedMember: null,
     pendingNode: null, mouse: null,
-    dynOverride: null, dynAnimMode: 0
+    dynOverride: null, dynAnimMode: 0,
+    zeroForce: null,          // Set of zero-force member ids (educational)
+    sectionsCut: null         // { p1, p2 } world points for method of sections
   };
 
   /* ---------- steel section library ---------- */
@@ -57,7 +60,7 @@
     member:  "Click a start node, then an end node, to create a member. ESC cancels.",
     support: "Click a node to cycle: none → pin → roller(Y) → roller(X).",
     load:    "Click a node, then enter the load components.",
-    select:  "Click a node or member to edit it in the panel."
+    select:  "Click a node or member to edit it in the floating box."
   };
 
   document.querySelectorAll(".tool").forEach(b => {
@@ -66,6 +69,7 @@
       b.classList.add("active");
       ui.tool = b.dataset.tool;
       ui.pendingNode = null;
+      clearSelection();
       $("tool-hint").textContent = hints[ui.tool];
       draw();
     });
@@ -83,6 +87,7 @@
 
   cv.addEventListener("mousedown", e => {
     const p = evPos(e);
+    if (ui.sectionsCut) { handleSectionsClick(p); return; }   // method-of-sections picking
     if (e.button === 1 || (e.button === 0 && e.shiftKey)) {   // pan
       panning = true; panStart = p; cv.style.cursor = "grabbing";
       return;
@@ -127,6 +132,7 @@
     switch (ui.tool) {
       case "node": {
         if (hitNode) { selectNode(hitNode); break; }
+        clearSelection();
         pushHistory();
         const n = structure.addNode(snap(w.x), snap(w.y));
         selectNode(n);
@@ -134,7 +140,7 @@
         break;
       }
       case "member": {
-        if (!hitNode) { status("Members connect nodes — click an existing node first.", "err"); break; }
+        if (!hitNode) { clearSelection(); status("Members connect nodes — click an existing node first.", "err"); break; }
         if (!ui.pendingNode) {
           ui.pendingNode = hitNode;
           selectNode(hitNode);
@@ -151,7 +157,7 @@
         break;
       }
       case "support": {
-        if (!hitNode) { status("Click a node to set its support.", "err"); break; }
+        if (!hitNode) { clearSelection(); status("Click a node to set its support.", "err"); break; }
         pushHistory();
         const order = ["none", "pin", "rollerx", "rollery"];
         hitNode.support = order[(order.indexOf(hitNode.support) + 1) % order.length];
@@ -161,7 +167,7 @@
         break;
       }
       case "load": {
-        if (!hitNode) { status("Click a node to apply a load.", "err"); break; }
+        if (!hitNode) { clearSelection(); status("Click a node to apply a load.", "err"); break; }
         selectNode(hitNode);
         ui.tool = "select";
         document.querySelectorAll(".tool").forEach(x => x.classList.toggle("active", x.dataset.tool === "select"));
@@ -186,6 +192,7 @@
     ui.selectedNode = n; ui.selectedMember = null;
     $("member-edit").style.display = "none";
     $("selection-edit").style.display = "block";
+    $("selection-box").style.display = "block";
     $("selection-info").innerHTML = `<p>Node <b>n${n.id}</b></p>`;
     $("sel-x").value = n.x; $("sel-y").value = n.y;
     $("sel-px").value = n.px; $("sel-py").value = n.py;
@@ -196,6 +203,7 @@
     ui.selectedMember = m; ui.selectedNode = null;
     $("selection-edit").style.display = "none";
     $("member-edit").style.display = "block";
+    $("selection-box").style.display = "block";
     let Ntxt = "";
     if (structure.solved && structure.solution) {
       const N = structure.solution.memberForces.get(m.id);
@@ -212,6 +220,7 @@
     ui.selectedNode = null; ui.selectedMember = null;
     $("selection-edit").style.display = "none";
     $("member-edit").style.display = "none";
+    $("selection-box").style.display = "none";
     $("selection-info").innerHTML = `<p class="hint">Nothing selected.</p>`;
   }
   function deleteSelection() {
@@ -223,6 +232,7 @@
 
   $("btn-del-node").addEventListener("click", deleteSelection);
   $("btn-del-member").addEventListener("click", deleteSelection);
+  $("btn-sel-close").addEventListener("click", clearSelection);
 
   /* live edit bindings */
   const bind = (id, fn) => $(id).addEventListener("input", e => { fn(parseFloat(e.target.value)); structure.invalidate(); refreshResults(); draw(); });
@@ -247,9 +257,13 @@
   toggle("chk-legend", "showLegend");
   toggle("chk-buckle", "buckleCheck");
   $("chk-buckle").addEventListener("change", () => refreshResults());
-  $("inp-sallow").addEventListener("input", e => {
+  $("inp-sallow-max").addEventListener("input", e => {
     const v = parseFloat(e.target.value);
-    if (!isNaN(v) && v > 0) { ui.sigmaAllowMPa = v; refreshResults(); draw(); }
+    if (!isNaN(v) && v > 0) { ui.sigmaAllowMaxMPa = v; refreshResults(); draw(); }
+  });
+  $("inp-sallow-min").addEventListener("input", e => {
+    const v = parseFloat(e.target.value);
+    if (!isNaN(v) && v > 0) { ui.sigmaAllowMinMPa = v; refreshResults(); draw(); }
   });
   $("sel-colormode").addEventListener("change", e => { ui.colorMode = e.target.value; draw(); });
   $("range-defscale").addEventListener("input", e => {
@@ -266,7 +280,7 @@
     try {
       structure.solution = Solver.solve(structure, {
         selfWeight: { include: $("chk-sw").checked, rho: parseFloat($("inp-rho").value) || 7850 },
-        thermal:    { include: $("chk-th").checked, alpha: parseFloat($("inp-alpha").value) ?? 12 }
+        thermal:    { include: $("chk-th").checked, alpha: (() => { const v = parseFloat($("inp-alpha").value); return isNaN(v) ? 12 : v; })() }
       });
       structure.solved = true;
       structure.solveError = null;
@@ -342,7 +356,7 @@
     let maxUtil = 0, utilMember = null;
     for (const m of structure.members) {
       const N = sol.memberForces.get(m.id), dL = sol.memberDelta.get(m.id);
-      const U = Structure.utilization(m, N, ui.sigmaAllowMPa, ui.buckleCheck);
+      const U = Structure.utilization(m, N, ui.sigmaAllowMaxMPa, ui.sigmaAllowMinMPa, ui.buckleCheck);
       if (U > maxUtil) { maxUtil = U; utilMember = m; }
       const tr = document.createElement("tr");
       const cls = Math.abs(N) < 0.05 ? "Z" : (N > 0 ? "T" : "C");
@@ -587,6 +601,8 @@
     if (!confirm("Delete the entire structure?")) return;
     structure = new Structure();
     dynModes = null; dynResp = null; stopAnim();
+    ui.zeroForce = null; ui.sectionsCut = null;
+    $("infl-block").style.display = "none";
     document.querySelector("#tbl-modes tbody").innerHTML = "";
     $("btn-anim-mode").disabled = true; $("btn-run-dyn").disabled = true; $("btn-play").disabled = true;
     $("btn-export").disabled = true;
@@ -601,6 +617,8 @@
     structure = Structure.fromTemplate(e.target.value);
     e.target.value = "";
     dynModes = null; dynResp = null; stopAnim();
+    ui.zeroForce = null; ui.sectionsCut = null;
+    $("infl-block").style.display = "none";
     clearSelection(); refreshResults();
     renderer.fit(structure);
     status("Template loaded — press ▶ Solve.", "ok");
@@ -626,6 +644,8 @@
       try {
         structure = Structure.fromJSON(rd.result);
         dynModes = null; dynResp = null; stopAnim();
+        ui.zeroForce = null; ui.sectionsCut = null;
+        $("infl-block").style.display = "none";
         clearSelection(); refreshResults(); renderer.fit(structure); draw(); updateEmptyHint();
         status(`Opened ${f.name}`, "ok");
       } catch (err) { status("Open failed: " + err.message, "err"); }
@@ -639,7 +659,7 @@
     const lines = ["member,n1,n2,L_m,N_kN,sigma_MPa,elong_mm,utilisation,dT_C,E_kNcm2,A_cm2"];
     for (const m of structure.members) {
       const N = sol.memberForces.get(m.id) || 0;
-      const U = Structure.utilization(m, N, ui.sigmaAllowMPa, ui.buckleCheck);
+      const U = Structure.utilization(m, N, ui.sigmaAllowMaxMPa, ui.sigmaAllowMinMPa, ui.buckleCheck);
       lines.push([m.id, m.n1.id, m.n2.id, m.length.toFixed(4), N.toFixed(4),
         (N / m.A * 10).toFixed(3), sol.memberDelta.get(m.id).toFixed(4),
         U.toFixed(4), m.dT || 0, m.E, m.A].join(","));
@@ -653,10 +673,31 @@
     status("Member results exported.", "ok");
   });
 
+  /* export reactions + displacements as CSV */
+  $("btn-export-disp").addEventListener("click", () => {
+    if (!structure.solved || !structure.solution) return;
+    const sol = structure.solution;
+    const lines = ["node,x_m,y_m,ux_mm,uy_mm,|d|_mm,Rx_kN,Ry_kN,support"];
+    for (const n of structure.nodes) {
+      const d = Solver.nodeDisp(sol, n);
+      const r = sol.reactions.get(n.id) || { rx: 0, ry: 0 };
+      lines.push([n.id, n.x.toFixed(4), n.y.toFixed(4), d.ux.toFixed(4), d.uy.toFixed(4),
+        Math.hypot(d.ux, d.uy).toFixed(4), r.rx.toFixed(4), r.ry.toFixed(4), n.support].join(","));
+    }
+    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "joint_results.csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
+    status("Joint results exported.", "ok");
+  });
+
   /* ---------------- printable report ---------------- */
   $("btn-report").addEventListener("click", () => {
     if (!structure.solved || !structure.solution) return;
     const w = window.open("", "_blank");
+    if (!w) { status("Popup blocked — allow popups for this site to open the report.", "err"); return; }
     try {
       w.document.write(Report.build({
         structure, sol: structure.solution, renderer, ui,
@@ -670,20 +711,154 @@
     }
   });
 
+  /* ======================= LEARN TOOLS ======================= */
+  const learnOut = () => $("learn-output");
+  const learnMsg = (html, cls = "") => { learnOut().innerHTML = `<p class="${cls}">${html}</p>`; };
+  const fmtN = (v) => v.toFixed(2);
+  const stateCls = (v) => Math.abs(v) < 0.05 ? "Z" : (v > 0 ? "T" : "C");
+  const stateTxt = (v) => Math.abs(v) < 0.05 ? "zero" : (v > 0 ? "tension" : "compression");
+
+  /* ----- zero-force highlight toggle ----- */
+  $("chk-zero").addEventListener("change", e => {
+    if (e.target.checked) {
+      if (!structure.solved || !structure.solution) { e.target.checked = false; status("Solve first to detect zero-force members.", "err"); return; }
+      const zf = Worked.zeroForce(structure, structure.solution);
+      ui.zeroForce = new Set(zf.map(x => x.member.id));
+      if (zf.length) {
+        learnMsg(`<b>${zf.length}</b> zero-force member${zf.length > 1 ? "s" : ""} found. <span class="note-dim">Dashed white on canvas.</span>`);
+        zf.forEach(z => { const p = document.createElement("div"); p.className = "step-item"; p.innerHTML = `<b>M${z.member.id}</b> — ${z.reason}`; learnOut().appendChild(p); });
+      } else {
+        learnMsg("No zero-force members detected by the classic rules.", "note-dim");
+      }
+    } else {
+      ui.zeroForce = null;
+      learnMsg("Solve the structure first, then pick a tool above.");
+    }
+    draw();
+  });
+
+  /* ----- method of joints (worked) ----- */
+  $("btn-worked").addEventListener("click", () => {
+    if (!structure.solved || !structure.solution) { status("Solve the structure first.", "err"); return; }
+    const sol = structure.solution;
+    const res = Worked.joints(structure, sol);
+    if (!res.allKnown) {
+      learnMsg("The method of joints could not solve every member — the truss is statically indeterminate or has a mechanism. Use the exact solver (▶ Solve) for the full solution.", "note-err");
+      return;
+    }
+    let html = `<p class="note-ok"><b>Method of joints</b> — solved ${res.steps.length} joint${res.steps.length > 1 ? "s" : ""} in order.</p>`;
+    res.steps.forEach((st, i) => {
+      const j = st.joint;
+      const parts = st.unknowns.map((m, k) => {
+        const v = st.values[k];
+        return `<span class="eq">M${m.id} = ${fmtN(v)} kN</span> <span class="${stateCls(v)}">(${stateTxt(v)})</span>`;
+      });
+      html += `<div class="step-item"><b>Step ${i + 1} — joint n${j.id}</b><br>
+        <span class="note-dim">ΣFx: ${fmtN(st.fx)} + ΣNx = 0,  ΣFy: ${fmtN(st.fy)} + ΣNy = 0</span><br>
+        ${parts.join("&nbsp;&nbsp;")}</div>`;
+    });
+    learnMsg(html);
+    status(`Method of joints: ${res.steps.length} steps.`, "ok");
+  });
+
+  /* ----- method of sections ----- */
+  $("btn-sections").addEventListener("click", () => {
+    if (!structure.solved || !structure.solution) { status("Solve the structure first.", "err"); return; }
+    if (ui.sectionsCut) { ui.sectionsCut = null; learnMsg("Cut line cleared — click two points on the canvas to draw a new cut."); draw(); return; }
+    learnMsg("Click <b>two points</b> on the canvas to define the cut line. The free body on the smaller side is solved by ΣFx, ΣFy, ΣM.", "note-dim");
+    status("Method of sections: click two points to draw the cut line.", "ok");
+    ui.sectionsCut = { p1: null, p2: null };
+    draw();
+  });
+
+  /* ----- influence lines ----- */
+  function populateInfluence() {
+    const sel = $("sel-infl");
+    sel.innerHTML = `<option value="">— choose —</option>`;
+    structure.members.forEach(m => {
+      const o = document.createElement("option");
+      o.value = "m" + m.id; o.textContent = `Member M${m.id} (n${m.n1.id}–n${m.n2.id})`;
+      sel.appendChild(o);
+    });
+    structure.nodes.forEach(n => {
+      if (!n.restrainedX && !n.restrainedY) return;
+      if (n.restrainedX) { const o = document.createElement("option"); o.value = "rx" + n.id; o.textContent = `Reaction Rx at n${n.id}`; sel.appendChild(o); }
+      if (n.restrainedY) { const o = document.createElement("option"); o.value = "ry" + n.id; o.textContent = `Reaction Ry at n${n.id}`; sel.appendChild(o); }
+    });
+  }
+  $("btn-influence").addEventListener("click", () => {
+    if (!structure.solved || !structure.solution) { status("Solve the structure first.", "err"); return; }
+    $("infl-block").style.display = "block";
+    populateInfluence();
+    $("sel-infl").focus();
+    status("Influence lines: choose a response quantity to plot.", "ok");
+  });
+  function drawInfluence() {
+    const sel = $("sel-infl");
+    if (!sel.value) { $("infl-cap").textContent = "Choose a member force or reaction to plot its influence line."; return; }
+    const axis = $("sel-infl-axis").value;
+    let opts = { axis };
+    if (sel.value[0] === "m") opts.memberId = parseInt(sel.value.slice(1), 10);
+    else { opts.reactionNodeId = parseInt(sel.value.slice(2), 10); opts.reactionAxis = sel.value[1]; }
+    const data = Influence.line(structure, opts);
+    const label = sel.options[sel.selectedIndex].textContent;
+    Influence.draw($("canvas-infl"), data, { title: `Influence line of ${label} (unit ${axis === "y" ? "vertical" : "horizontal"} load)` });
+    $("infl-cap").textContent = `Peak |value| = ${data.maxAbs.toFixed(2)} kN. A unit load moves along the joints; the plot shows the response at each position.`;
+  }
+  $("sel-infl").addEventListener("change", drawInfluence);
+  $("sel-infl-axis").addEventListener("change", drawInfluence);
+
+  /* ----- method of sections: canvas cut-line picking ----- */
+  function handleSectionsClick(p) {
+    if (ui.sectionsCut.p1 === null) {
+      const w = renderer.S2W(p.x, p.y);
+      ui.sectionsCut.p1 = { x: w.x, y: w.y };
+      status("Now click the second point of the cut line.", "ok");
+      draw();
+      return;
+    }
+    const w = renderer.S2W(p.x, p.y);
+    ui.sectionsCut.p2 = { x: w.x, y: w.y };
+    const res = Worked.sections(structure, structure.solution, [ui.sectionsCut.p1, ui.sectionsCut.p2]);
+    if (!res.solvable) {
+      learnMsg(res.msg, "note-err");
+      status(res.msg, "err");
+    } else {
+      let html = `<p class="note-ok"><b>Method of sections</b> — cut crosses ${res.cutMembers.length} member${res.cutMembers.length > 1 ? "s" : ""}; free body has ${res.freeBody.length} joints.</p>`;
+      res.cutMembers.forEach(m => {
+        const v = res.forces.get(m.id);
+        html += `<div class="step-item"><b>M${m.id}</b> (n${m.n1.id}–n${m.n2.id}): <span class="eq">${fmtN(v)} kN</span> <span class="${stateCls(v)}">(${stateTxt(v)})</span></div>`;
+      });
+      learnMsg(html);
+      status(`Method of sections: ${res.cutMembers.length} cut members solved.`, "ok");
+    }
+    ui.sectionsCut = null;
+    draw();
+  }
+
+  /* ======================= HELP MODAL ======================= */
+  const helpModal = $("help-modal");
+  $("btn-help").addEventListener("click", () => { helpModal.style.display = "flex"; });
+  $("btn-help-close").addEventListener("click", () => { helpModal.style.display = "none"; });
+  helpModal.addEventListener("click", e => { if (e.target === helpModal) helpModal.style.display = "none"; });
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && helpModal.style.display === "flex") helpModal.style.display = "none"; });
+
   /* ---------------- material presets ---------------- */
   const MATERIALS = {
-    steel:    { E: 21000, A: 20,  sallow: 157 },   // S235/1.5
-    steel355: { E: 21000, A: 20,  sallow: 237 },   // S355/1.5
-    alu:      { E: 6900,  A: 20,  sallow: 140 },   // 6061-T6 /1.65-ish
-    timber:   { E: 1150,  A: 100, sallow: 14  }    // GL24 bending-ish, larger section
+    steel:    { E: 21000, A: 20,  sallowMax: 157, sallowMin: 157, rho: 7850 },   // S235/1.5
+    steel355: { E: 21000, A: 20,  sallowMax: 237, sallowMin: 237, rho: 7850 },   // S355/1.5
+    alu:      { E: 6900,  A: 20,  sallowMax: 140, sallowMin: 140, rho: 2700 },   // 6061-T6 /1.65-ish
+    timber:   { E: 1150,  A: 100, sallowMax: 14,  sallowMin: 14,  rho: 600  }    // GL24 bending-ish, larger section
   };
   $("sel-material").addEventListener("change", e => {
     const m = MATERIALS[e.target.value];
     if (!m) { return; }
     $("inp-E").value = m.E; $("inp-A").value = m.A;
-    ui.sigmaAllowMPa = m.sallow; $("inp-sallow").value = m.sallow;
+    $("inp-rho").value = m.rho;
+    ui.sigmaAllowMaxMPa = m.sallowMax; $("inp-sallow-max").value = m.sallowMax;
+    ui.sigmaAllowMinMPa = m.sallowMin; $("inp-sallow-min").value = m.sallowMin;
     refreshResults(); draw();
-    status(`Material preset applied (E = ${m.E} kN/cm², σ_allow = ${m.sallow} MPa).`, "ok");
+    status(`Material preset applied (E = ${m.E} kN/cm², ρ = ${m.rho} kg/m³, σ_allow max = ${m.sallowMax} / min = ${m.sallowMin} MPa).`, "ok");
   });
 
   /* ---------------- empty-canvas hint ---------------- */
@@ -702,12 +877,14 @@
     try {
       structure = Structure.fromJSON(undoStack.pop());
       dynModes = null; dynResp = null; stopAnim();
+      ui.zeroForce = null; ui.sectionsCut = null;
+      $("infl-block").style.display = "none";
       clearSelection(); refreshResults(); draw();
       status("Undone.", "ok");
     } catch (err) { status("Undo failed: " + err.message, "err"); }
   };
   /* snapshot before editing any field */
-  document.querySelectorAll("#panel input, #panel select, #results input, #results select")
+  document.querySelectorAll("#panel input, #panel select, #results input, #results select, #selection-box input, #selection-box select")
     .forEach(el => el.addEventListener("focus", () => { if (!undoStack.length || undoStack[undoStack.length-1] !== structure.toJSON()) pushHistory(); }));
   document.addEventListener("keydown", e => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { e.preventDefault(); doUndo(); return; }
@@ -735,7 +912,10 @@
   document.querySelectorAll(".panel-block.step .acc-head").forEach(h => {
     h.addEventListener("click", () => {
       const s = h.closest(".panel-block.step");
-      s.classList.toggle("open", !s.classList.contains("open"));
+      const wasOpen = s.classList.contains("open");
+      /* accordion: close all other steps, then toggle this one */
+      document.querySelectorAll(".panel-block.step").forEach(x => x.classList.remove("open"));
+      if (!wasOpen) s.classList.add("open");
     });
   });
 
@@ -768,12 +948,12 @@
   $("btn-solve-left").addEventListener("click", solveNow);
 
   /* material & section fields mark step 2 done */
-  ["inp-E", "inp-A", "sel-material", "sel-section"].forEach(id => {
+  ["inp-E", "inp-A", "inp-rho", "sel-material", "sel-section"].forEach(id => {
     $(id).addEventListener("input", () => { materialTouched = true; refreshSteps(); });
     $(id).addEventListener("change", () => { materialTouched = true; refreshSteps(); });
   });
   /* load fields re-evaluate step 3 */
-  ["chk-sw", "chk-th", "inp-rho", "inp-alpha"].forEach(id =>
+  ["chk-sw", "chk-th", "inp-alpha"].forEach(id =>
     $(id).addEventListener("input", refreshSteps));
 
   /* ======================= PANEL RESIZERS ======================= */
